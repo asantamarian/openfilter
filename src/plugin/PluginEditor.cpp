@@ -43,6 +43,22 @@ OpenFilterEditor::OpenFilterEditor (OpenFilterProcessor& p)
     outputDial.attach (p.apvts.getParameter ("out_gain"), &p.undo);
     addAndMakeVisible (outputDial);
 
+    // Gain scale multiplies every band's gain and dynamic range; negative values invert the curve.
+    scaleDial.setBipolar (true);
+    scaleDial.setArcColour (theme::accent);
+    scaleDial.attach (p.apvts.getParameter ("gain_scale"), &p.undo);
+    scaleDial.setTooltip ("Gain scale: multiplies the gain and dynamic range of every band. 0 % flattens the EQ, negative values invert it.");
+    addAndMakeVisible (scaleDial);
+    balanceDial.setBipolar (true);
+    balanceDial.setArcColour (theme::text);
+    balanceDial.attach (p.apvts.getParameter ("out_pan"), &p.undo);
+    addAndMakeVisible (balanceDial);
+    invertButton.setClickingTogglesState (true);
+    invertButton.setTitle ("Invert polarity");
+    invertButton.setTooltip ("Invert the polarity of the output.");
+    invertAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, "out_invert", invertButton);
+    addAndMakeVisible (invertButton);
+
     bypassButton.setClickingTogglesState (true);
     deltaButton.setClickingTogglesState (true);
     undoButton.onClick = [this] { processor.undo.undo(); };
@@ -141,7 +157,22 @@ void OpenFilterEditor::resized()
 
     auto col = outputColumn.reduced (0, 12);
     col.removeFromTop (36);
-    outputDial.setBounds (col.removeFromBottom (92).reduced (6, 0));
+    // Output gain is always there; scale, balance and polarity appear when the column is tall
+    // enough to keep a readable meter above them.
+    const bool tall = col.getHeight() >= 470;
+    scaleDial.setVisible (tall);
+    balanceDial.setVisible (tall);
+    invertButton.setVisible (tall);
+    if (tall)
+    {
+        invertButton.setBounds (col.removeFromBottom (24).reduced (12, 0));
+        col.removeFromBottom (8);
+        balanceDial.setBounds (col.removeFromBottom (78).reduced (8, 0));
+        scaleDial.setBounds (col.removeFromBottom (78).reduced (8, 0));
+        outputDial.setBounds (col.removeFromBottom (78).reduced (8, 0));
+    }
+    else
+        outputDial.setBounds (col.removeFromBottom (92).reduced (6, 0));
     meterArea = col.reduced (0, 8);
 }
 

@@ -11,6 +11,7 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
 option(OF_BUILD_PLUGIN "Build the plugin (needs JUCE)"        ON)
 option(OF_BUILD_TESTS  "Build unit tests"                     ON)
 option(OF_BUILD_AAX    "Build AAX (needs AAX_SDK_PATH)"       OFF)
+option(OF_INSTALL_AFTER_BUILD "Copy the built plugins to the user plugin folders" ON)
 
 if(MSVC)
   set(OF_WARNINGS /W4)
@@ -58,7 +59,7 @@ if(OF_BUILD_PLUGIN)
     AU_MAIN_TYPE                kAudioUnitType_Effect
     AAX_CATEGORY                AAX_ePlugInCategory_EQ
     LV2URI                      "https://github.com/OWNER/openfilter/eq"   # placeholder: set before first release, permanent afterwards
-    COPY_PLUGIN_AFTER_BUILD     FALSE)
+    COPY_PLUGIN_AFTER_BUILD     ${OF_INSTALL_AFTER_BUILD})
 
   target_sources(OpenFilterEQ PRIVATE
     src/plugin/Parameters.cpp

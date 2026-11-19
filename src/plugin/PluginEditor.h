@@ -31,7 +31,9 @@ private:
     theme::NeonLook look;
     ResponseDisplay display;
     BandDock dock;
-    Dial outputDial { "Out" };
+    Dial outputDial { "Out" }, scaleDial { "Scale" }, balanceDial { "Bal" };
+    juce::TextButton invertButton { "Inv" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> invertAttachment;
     juce::TextButton presetButton, viewButton { "View" };
     std::array<juce::TextButton, OpenFilterProcessor::kNumSlots> slotButtons;
     BandTable table;

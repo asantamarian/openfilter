@@ -53,9 +53,12 @@ cd build && ctest
 `ctest` runs three things: the DSP unit tests, a host test that loads the built VST3
 and LV2 the way a DAW does, and a tool that renders the editor to `build/editor.png`.
 
-The plugins are in `build/OpenFilterEQ_artefacts/Release/`. To try one in a DAW,
-copy `VST3/OpenFilter EQ.vst3` to `~/.vst3/` or `LV2/OpenFilter EQ.lv2` to `~/.lv2/`.
-The `Standalone/OpenFilter EQ` binary runs on its own.
+The plugins are in `build/OpenFilterEQ_artefacts/Release/`, and the build also copies
+them to your user plugin folders (`~/.vst3/` and `~/.lv2/` on Linux), so a rescan in
+your DAW picks up the new version. Pass `-DOF_INSTALL_AFTER_BUILD=OFF` to turn that
+off. The `Standalone/OpenFilter EQ` binary runs on its own.
+
+Licence: AGPL-3.0-or-later (see `LICENSE`), as required by the open-source JUCE licence.
 
 ## Specs
 

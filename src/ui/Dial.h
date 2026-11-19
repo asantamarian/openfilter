@@ -8,7 +8,7 @@ namespace of
 {
 /** A 270 degree arc dial bound to one parameter (docs/spec/05-ui.md section 5).
     Drag vertically, scroll, double-click to reset. Shift = fine. */
-class Dial final : public juce::Component
+class Dial final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
     explicit Dial (juce::String labelText);
