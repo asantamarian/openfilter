@@ -43,11 +43,77 @@ OpenFilterProcessor::OpenFilterProcessor()
     characterPtr = raw ("character");
     drivePtr = raw ("drive");
     bypassParam = apvts.getParameter ("bypass");
+    for (auto& m : ccMap)      m.store (-1);
+    for (auto& v : ccPending)  v.store (-1);
+    startTimerHz (60);   // applies incoming controller values on the message thread
     hub->add (*this);
     apvts.addParameterListener ("phase_mode", this);
     apvts.addParameterListener ("lin_quality", this);
     apvts.addParameterListener ("lookahead", this);
     apvts.addParameterListener ("character", this);
+}
+
+//==============================================================================
+void OpenFilterProcessor::handleMidi (const juce::MidiBuffer& midi) noexcept
+{
+    for (const auto meta : midi)
+    {
+        const auto message = meta.getMessage();
+        if (! message.isController())
+            continue;
+        const int cc = message.getControllerNumber();
+        if (cc < 0 || cc > 127)
+            continue;
+
+        // Learning: the first controller that moves takes the waiting parameter.
+        const int waiting = learnParam.load (std::memory_order_relaxed);
+        if (waiting >= 0)
+        {
+            ccMap[static_cast<size_t> (cc)].store (waiting, std::memory_order_relaxed);
+            learnParam.store (-1, std::memory_order_relaxed);
+        }
+        if (ccMap[static_cast<size_t> (cc)].load (std::memory_order_relaxed) >= 0)
+        {
+            ccPending[static_cast<size_t> (cc)].store (message.getControllerValue(), std::memory_order_relaxed);
+            midiActivity.store (true, std::memory_order_relaxed);
+        }
+    }
+}
+
+void OpenFilterProcessor::timerCallback()
+{
+    if (! midiActivity.exchange (false))
+        return;
+    const auto& all = getParameters();
+    for (size_t cc = 0; cc < 128; ++cc)
+    {
+        const int value = ccPending[cc].exchange (-1);
+        const int index = ccMap[cc].load();
+        if (value < 0 || index < 0 || index >= all.size())
+            continue;
+        const float normalised = static_cast<float> (value) / 127.0f;
+        if (! juce::approximatelyEqual (all[index]->getValue(), normalised))
+            all[index]->setValueNotifyingHost (normalised);   // not an undo step: it is a performance gesture
+    }
+}
+
+void OpenFilterProcessor::beginMidiLearn (juce::RangedAudioParameter& parameter) { learnParam.store (parameter.getParameterIndex()); }
+
+bool OpenFilterProcessor::isLearning (const juce::RangedAudioParameter& parameter) const { return learnParam.load() == parameter.getParameterIndex(); }
+
+int OpenFilterProcessor::mappedController (const juce::RangedAudioParameter& parameter) const
+{
+    for (int cc = 0; cc < 128; ++cc)
+        if (ccMap[static_cast<size_t> (cc)].load() == parameter.getParameterIndex())
+            return cc;
+    return -1;
+}
+
+void OpenFilterProcessor::clearMidiMapping (juce::RangedAudioParameter& parameter)
+{
+    for (auto& m : ccMap)
+        if (m.load() == parameter.getParameterIndex())
+            m.store (-1);
 }
 
 void OpenFilterProcessor::updateTrackProperties (const TrackProperties& properties)
@@ -61,6 +127,7 @@ void OpenFilterProcessor::updateTrackProperties (const TrackProperties& properti
 
 OpenFilterProcessor::~OpenFilterProcessor()
 {
+    stopTimer();
     hub->remove (*this);
     apvts.removeParameterListener ("phase_mode", this);
     apvts.removeParameterListener ("lin_quality", this);
@@ -229,8 +296,17 @@ void OpenFilterProcessor::process (juce::AudioBuffer<Sample>& buffer)
     }
 }
 
-void OpenFilterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) { process (buffer); }
-void OpenFilterProcessor::processBlock (juce::AudioBuffer<double>& buffer, juce::MidiBuffer&) { process (buffer); }
+void OpenFilterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
+{
+    handleMidi (midi);
+    process (buffer);
+}
+
+void OpenFilterProcessor::processBlock (juce::AudioBuffer<double>& buffer, juce::MidiBuffer& midi)
+{
+    handleMidi (midi);
+    process (buffer);
+}
 
 //==============================================================================
 juce::AudioProcessorEditor* OpenFilterProcessor::createEditor() { return new OpenFilterEditor (*this); }
@@ -270,6 +346,21 @@ void OpenFilterProcessor::getStateInformation (juce::MemoryBlock& dest)
         slotsTree.appendChild (one, nullptr);
     }
     root.appendChild (slotsTree, nullptr);
+
+    // MIDI map: controller to parameter ID, so it survives parameters being added later.
+    juce::ValueTree midiMap ("MidiMap");
+    for (int cc = 0; cc < 128; ++cc)
+    {
+        const int index = ccMap[static_cast<size_t> (cc)].load();
+        if (auto* p = index >= 0 && index < getParameters().size() ? dynamic_cast<juce::RangedAudioParameter*> (getParameters()[index]) : nullptr)
+        {
+            juce::ValueTree map ("Map");
+            map.setProperty ("cc", cc, nullptr);
+            map.setProperty ("param", p->getParameterID(), nullptr);
+            midiMap.appendChild (map, nullptr);
+        }
+    }
+    root.appendChild (midiMap, nullptr);
 
     juce::MemoryOutputStream stream (dest, false);
     root.writeToStream (stream);
@@ -312,6 +403,15 @@ void OpenFilterProcessor::setStateInformation (const void* data, int size)
         analyzerTilt = juce::jlimit (0.0f, 6.0f, static_cast<float> (ui.getProperty ("analyzerTilt", 4.5)));
         const int shownRange = ui.getProperty ("analyzerRange", 90);
         analyzerRange = shownRange <= 60 ? 60 : shownRange <= 90 ? 90 : 120;
+    }
+
+    for (auto& m : ccMap)
+        m.store (-1);
+    for (const auto& map : root.getChildWithName ("MidiMap"))
+    {
+        const int cc = map.getProperty ("cc", -1);
+        if (auto* p = cc >= 0 && cc < 128 ? apvts.getParameter (map.getProperty ("param").toString()) : nullptr)
+            ccMap[static_cast<size_t> (cc)].store (p->getParameterIndex());
     }
 
     for (auto& values : slots)

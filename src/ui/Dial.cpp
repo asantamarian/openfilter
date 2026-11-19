@@ -5,7 +5,7 @@ namespace of
 Dial::Dial (juce::String labelText) : label (std::move (labelText))
 {
     setRepaintsOnMouseActivity (false);
-    setWantsKeyboardFocus (false);
+    setWantsKeyboardFocus (true);   // reachable with Tab; arrows change it, Enter types a value
 }
 
 void Dial::attach (juce::RangedAudioParameter* parameter, juce::UndoManager* undo)
@@ -53,9 +53,28 @@ void Dial::paint (juce::Graphics& g)
         g.drawText (textOverride ? textOverride() : param->getCurrentValueAsText(), valueArea, juce::Justification::centred, false);
     }
 
-    g.setColour (theme::textMuted.withMultipliedAlpha (alpha));
-    g.setFont (theme::ui (10.0f, true).withExtraKerningFactor (0.08f));
-    g.drawText (label.toUpperCase(), labelArea, juce::Justification::centred, false);
+    // MIDI learn: armed and waiting, or the controller it is mapped to.
+    juce::String caption = label.toUpperCase();
+    auto captionColour = theme::textMuted;
+    if (midiLearn != nullptr && param != nullptr)
+    {
+        if (midiLearn->isLearning (*param))
+        {
+            caption = "MOVE A KNOB";
+            captionColour = theme::warn;
+        }
+        else if (const int cc = midiLearn->mappedController (*param); cc >= 0)
+            caption = label.toUpperCase() + " CC" + juce::String (cc);
+    }
+    g.setColour (captionColour.withMultipliedAlpha (alpha));
+    g.setFont (theme::ui (10.0f, true).withExtraKerningFactor (caption.length() > 9 ? 0.0f : 0.08f));
+    g.drawText (caption, labelArea.expanded (8, 0), juce::Justification::centred, false);
+
+    if (hasKeyboardFocus (false))   // visible focus
+    {
+        g.setColour (theme::accent);
+        g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (1.0f), 6.0f, 1.5f);
+    }
 }
 
 void Dial::setNormalised (float value)
@@ -107,10 +126,110 @@ void Dial::closeValueEditor (bool apply)
     repaint();
 }
 
+void Dial::showContextMenu()
+{
+    juce::PopupMenu menu;
+    menu.addItem (1, "Type a value...");
+    menu.addItem (2, "Reset to default");
+    if (midiLearn != nullptr)
+    {
+        const int cc = midiLearn->mappedController (*param);
+        menu.addSeparator();
+        menu.addItem (3, midiLearn->isLearning (*param) ? "Cancel MIDI learn" : "Learn MIDI controller");
+        menu.addItem (4, cc >= 0 ? "Clear MIDI mapping (CC " + juce::String (cc) + ")" : juce::String ("Clear MIDI mapping"), cc >= 0);
+    }
+    juce::Component::SafePointer<Dial> safe (this);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withParentComponent (getTopLevelComponent()), [safe] (int result)
+    {
+        if (safe == nullptr || safe->param == nullptr || safe->attachment == nullptr)
+            return;
+        if (result == 1) safe->showValueEditor();
+        else if (result == 2) safe->attachment->setValueAsCompleteGesture (safe->param->convertFrom0to1 (safe->param->getDefaultValue()));
+        else if (result == 3)
+        {
+            if (safe->midiLearn->isLearning (*safe->param)) safe->midiLearn->cancelMidiLearn();
+            else safe->midiLearn->beginMidiLearn (*safe->param);
+        }
+        else if (result == 4) safe->midiLearn->clearMidiMapping (*safe->param);
+        safe->repaint();
+    });
+}
+
+void Dial::nudge (float normalisedStep)
+{
+    if (attachment != nullptr && param != nullptr && ! dimmed)
+        attachment->setValueAsCompleteGesture (param->convertFrom0to1 (juce::jlimit (0.0f, 1.0f, param->getValue() + normalisedStep)));
+}
+
+bool Dial::keyPressed (const juce::KeyPress& key)
+{
+    if (attachment == nullptr || dimmed)
+        return false;
+    const float step = key.getModifiers().isShiftDown() ? 0.002f : 0.02f;
+    const int code = key.getKeyCode();
+    if (code == juce::KeyPress::upKey || code == juce::KeyPress::rightKey)    { nudge (step); return true; }
+    if (code == juce::KeyPress::downKey || code == juce::KeyPress::leftKey)   { nudge (-step); return true; }
+    if (code == juce::KeyPress::pageUpKey)                                    { nudge (0.1f); return true; }
+    if (code == juce::KeyPress::pageDownKey)                                  { nudge (-0.1f); return true; }
+    if (code == juce::KeyPress::returnKey)                                    { showValueEditor(); return true; }
+    if (code == juce::KeyPress::homeKey || code == juce::KeyPress::deleteKey || code == juce::KeyPress::backspaceKey)
+    {
+        attachment->setValueAsCompleteGesture (param->convertFrom0to1 (param->getDefaultValue()));
+        return true;
+    }
+    return false;
+}
+
+std::unique_ptr<juce::AccessibilityHandler> Dial::createAccessibilityHandler()
+{
+    // A slider to assistive technology: name from the title, value with its unit, settable.
+    struct Value final : juce::AccessibilityValueInterface   // the general one: we supply the text, with units
+    {
+        explicit Value (Dial& d) : dial (d) {}
+        bool isReadOnly() const override { return dial.param == nullptr || dial.attachment == nullptr || dial.dimmed; }
+        double getCurrentValue() const override { return dial.param != nullptr ? dial.param->convertFrom0to1 (dial.param->getValue()) : 0.0; }
+        juce::String getCurrentValueAsString() const override
+        {
+            if (dial.param == nullptr)
+                return {};
+            return dial.textOverride ? dial.textOverride() : dial.param->getCurrentValueAsText();
+        }
+        void setValue (double v) override
+        {
+            if (! isReadOnly())
+            {
+                const auto& r = dial.param->getNormalisableRange();
+                dial.attachment->setValueAsCompleteGesture (juce::jlimit (r.start, r.end, static_cast<float> (v)));
+            }
+        }
+        void setValueAsString (const juce::String& text) override
+        {
+            if (! isReadOnly())
+                dial.attachment->setValueAsCompleteGesture (dial.param->convertFrom0to1 (juce::jlimit (0.0f, 1.0f, dial.param->getValueForText (text))));
+        }
+        AccessibleValueRange getRange() const override
+        {
+            if (dial.param == nullptr)
+                return {};
+            const auto& r = dial.param->getNormalisableRange();
+            return { { static_cast<double> (r.start), static_cast<double> (r.end) }, static_cast<double> (r.end - r.start) / 100.0 };
+        }
+        Dial& dial;
+    };
+
+    return std::make_unique<juce::AccessibilityHandler> (*this, juce::AccessibilityRole::slider, juce::AccessibilityActions(),
+                                                         juce::AccessibilityHandler::Interfaces { std::make_unique<Value> (*this) });
+}
+
 void Dial::mouseDown (const juce::MouseEvent& e)
 {
     if (attachment == nullptr || dimmed)
         return;
+    if (e.mods.isPopupMenu())
+    {
+        showContextMenu();
+        return;
+    }
     if (valueArea().contains (e.getPosition()))   // click the value to type one
     {
         showValueEditor();

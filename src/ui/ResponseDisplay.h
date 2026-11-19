@@ -82,6 +82,7 @@ private:
     void showBandMenu (int band);
     void endDrag();
     void setPrimary (int band);
+    void announceSelection();
 
     OpenFilterProcessor& processor;
     std::array<BandParams, kMaxBands> bands {};

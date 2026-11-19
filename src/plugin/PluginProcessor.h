@@ -6,12 +6,15 @@
 #include "dsp/Engine.h"
 #include "dsp/util/SpscFifo.h"
 #include "hub/InstanceHub.h"
+#include "ui/Dial.h"
 
 namespace of
 {
 class OpenFilterProcessor final : public juce::AudioProcessor,
                                   private juce::AudioProcessorValueTreeState::Listener,
-                                  private juce::AsyncUpdater
+                                  private juce::AsyncUpdater,
+                                  private juce::Timer,
+                                  public MidiLearnTarget
 {
 public:
     OpenFilterProcessor();
@@ -31,7 +34,7 @@ public:
 
     const juce::String getName() const override { return "OpenFilter EQ"; }
     void updateTrackProperties (const TrackProperties&) override;
-    bool acceptsMidi() const override { return false; }
+    bool acceptsMidi() const override { return true; }   // controllers, for MIDI learn only
     bool producesMidi() const override { return false; }
     double getTailLengthSeconds() const override { return 0.5; }
 
@@ -80,6 +83,15 @@ public:
     juce::SharedResourcePointer<InstanceHub> hub;
     std::atomic<bool> analyzerActive { false };
 
+    // MIDI learn (docs/spec/06-state.md section 7): one controller drives one parameter.
+    void beginMidiLearn (juce::RangedAudioParameter&) override;
+    void cancelMidiLearn() override { learnParam.store (-1); }
+    bool isLearning (const juce::RangedAudioParameter&) const override;
+    int mappedController (const juce::RangedAudioParameter&) const override;
+    void clearMidiMapping (juce::RangedAudioParameter&) override;
+    /** Applies controller values received since the last call (what the timer does). For tools. */
+    void applyPendingMidi() { timerCallback(); }
+
     juce::UndoManager undo;
     juce::AudioProcessorValueTreeState apvts;
 
@@ -111,6 +123,14 @@ private:
     void parameterChanged (const juce::String&, float) override { triggerAsyncUpdate(); }
     void handleAsyncUpdate() override { updateLatency(); }
     void updateLatency();
+    void timerCallback() override;
+    void handleMidi (const juce::MidiBuffer&) noexcept;
+
+    // Audio thread reads ccMap and writes pending values; the message thread applies them.
+    std::array<std::atomic<int>, 128> ccMap;         // controller -> parameter index, or -1
+    std::array<std::atomic<int>, 128> ccPending;     // controller -> last value seen (0..127), or -1
+    std::atomic<int> learnParam { -1 };              // parameter index waiting for a controller
+    std::atomic<bool> midiActivity { false };
     std::vector<float> captureValues() const;
     void applyValues (const std::vector<float>&);
     template <typename Sample> void process (juce::AudioBuffer<Sample>&);

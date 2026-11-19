@@ -229,8 +229,25 @@ void ResponseDisplay::setPrimary (int band)
         inSelection[static_cast<size_t> (band)] = true;
     rebuildCurves();
     repaint();
+    announceSelection();
     if (onSelectionChanged)
         onSelectionChanged (selected);
+}
+
+void ResponseDisplay::announceSelection()
+{
+    // Screen readers cannot see the nodes, so say which band is now selected.
+    if (selected < 0 || ! bands[static_cast<size_t> (selected)].used)
+        return;
+    const auto& b = bands[static_cast<size_t> (selected)];
+    juce::String text = "Band " + juce::String (selected + 1) + ", " + params::shapeLabels()[static_cast<int> (b.shape)] + ", " + params::formatFrequency (b.freq);
+    if (hasGain (b.shape))
+        text << ", " << params::formatGain (b.gainDb);
+    if (! b.on)
+        text << ", bypassed";
+    if (b.dynamic())        text << ", dynamic";
+    else if (b.spectral())  text << ", spectral";
+    juce::AccessibilityHandler::postAnnouncement (text, juce::AccessibilityHandler::AnnouncementPriority::medium);
 }
 
 void ResponseDisplay::selectBand (int band)
@@ -247,6 +264,7 @@ void ResponseDisplay::selectBand (int band)
     selected = band;
     rebuildCurves();
     repaint();
+    announceSelection();
     if (onSelectionChanged)
         onSelectionChanged (selected);
 }
@@ -948,6 +966,23 @@ bool ResponseDisplay::keyPressed (const juce::KeyPress& key)
 
     const auto mods = key.getModifiers();
     const int code = key.getKeyCode();
+
+    // Tab and Shift+Tab step through the bands in order of frequency; past the last band Tab
+    // moves on to the next control as usual.
+    if (code == juce::KeyPress::tabKey)
+    {
+        std::vector<int> order;
+        for (int i = 0; i < kMaxBands; ++i)
+            if (bands[static_cast<size_t> (i)].used)
+                order.push_back (i);
+        std::sort (order.begin(), order.end(), [this] (int a, int b) { return bands[static_cast<size_t> (a)].freq < bands[static_cast<size_t> (b)].freq; });
+        const auto it = std::find (order.begin(), order.end(), selected);
+        const bool back = mods.isShiftDown();
+        if (order.empty() || (it != order.end() && (back ? it == order.begin() : it + 1 == order.end())))
+            return false;   // off the end: let focus move on
+        selectBand (it == order.end() ? (back ? order.back() : order.front()) : *(back ? it - 1 : it + 1));
+        return true;
+    }
 
     // 1..9 and 0 select bands 1..10.
     if (! mods.isAnyModifierKeyDown() && code >= '0' && code <= '9')

@@ -85,6 +85,9 @@ BandDock::BandDock (OpenFilterProcessor& p) : processor (p)
     for (auto* d : { &freqDial, &gainDial, &qDial, &thrDial, &rangeDial, &ratioDial, &atkDial, &relDial })
         addAndMakeVisible (*d);
 
+    for (auto* d : { &freqDial, &gainDial, &qDial, &thrDial, &rangeDial, &ratioDial, &atkDial, &relDial })
+        d->setMidiLearn (&processor);
+
     thrDial.textOverride = [this]
     {
         auto* p = band >= 0 ? processor.bandParam (band, "thr") : nullptr;

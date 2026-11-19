@@ -100,6 +100,48 @@ int main (int argc, char** argv)
         std::printf ("factory presets and band copy: %s (%d presets)\n", factoryOk ? "ok" : "WRONG", of::presets::factoryNames().size());
     }
 
+    // MIDI learn: arm a parameter, move controller 74, and it must be mapped, follow the
+    // controller, survive a session save, and clear.
+    bool midiOk = false;
+    {
+        of::OpenFilterProcessor m;
+        m.prepareToPlay (48000.0, 512);
+        auto* gain = m.apvts.getParameter ("out_gain");
+        juce::AudioBuffer<float> audio (2, 512);
+        const auto send = [&] (int cc, int value)
+        {
+            juce::MidiBuffer events;
+            events.addEvent (juce::MidiMessage::controllerEvent (1, cc, value), 0);
+            audio.clear();
+            m.processBlock (audio, events);
+            m.applyPendingMidi();
+        };
+
+        send (74, 20);   // nothing is mapped yet: ignored
+        const bool ignored = m.mappedController (*gain) < 0 && std::abs (gain->getValue() - gain->getDefaultValue()) < 1.0e-6f;
+        m.beginMidiLearn (*gain);
+        const bool armed = m.isLearning (*gain);
+        send (74, 127);
+        const bool learned = ! m.isLearning (*gain) && m.mappedController (*gain) == 74 && gain->getValue() > 0.999f;
+        send (74, 0);
+        const bool follows = gain->getValue() < 0.001f;
+        send (10, 127);   // another controller must not touch it
+        const bool isolated = gain->getValue() < 0.001f;
+
+        juce::MemoryBlock saved;
+        m.getStateInformation (saved);
+        of::OpenFilterProcessor reloaded;
+        reloaded.setStateInformation (saved.getData(), static_cast<int> (saved.getSize()));
+        const bool kept = reloaded.mappedController (*reloaded.apvts.getParameter ("out_gain")) == 74;
+
+        m.clearMidiMapping (*gain);
+        send (74, 127);
+        const bool cleared = m.mappedController (*gain) < 0 && gain->getValue() < 0.001f;
+
+        midiOk = ignored && armed && learned && follows && isolated && kept && cleared;
+        std::printf ("MIDI learn: %s\n", midiOk ? "ok" : "WRONG");
+    }
+
     // Typed frequency entry.
     const auto near = [] (double a, double b) { return std::abs (a - b) < 1.0e-6 * juce::jmax (1.0, b); };
     using of::params::parseFrequency;
@@ -350,5 +392,5 @@ int main (int argc, char** argv)
     }
     std::printf ("wrote %s (%d x %d)\n", smallFile.getFullPathName().toRawUTF8(), editor->getWidth(), editor->getHeight());
 
-    return written && tableWritten && roundTrip && presetOk && parseOk && slotsOk && factoryOk && matchOk && hubOk ? 0 : 1;
+    return written && tableWritten && roundTrip && presetOk && parseOk && slotsOk && factoryOk && matchOk && hubOk && midiOk ? 0 : 1;
 }

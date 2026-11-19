@@ -108,6 +108,14 @@ a warning badge in Settings.
 
 ## 7. MIDI learn
 
+**Built:** right-click a dial, choose "Learn MIDI controller", move a hardware
+control; the first controller received is mapped (any channel). The dial's caption
+shows the controller number, and the same menu clears it. Mappings are saved in
+the session state by parameter ID. Values are applied on the message thread by a
+60 Hz timer, not as undo steps. **Not built:** a default map saved outside the
+session, relative encoders, soft takeover, per-mapping ranges, and learn for
+controls that are not dials.
+
 - Enable "MIDI learn" in the status bar, touch a control, move a hardware control;
   the first CC received is mapped. Right-click a mapped control to clear.
 - Mappings are per instance (saved in session state) with an option "Save as

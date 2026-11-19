@@ -59,6 +59,9 @@ OpenFilterEditor::OpenFilterEditor (OpenFilterProcessor& p)
     autoAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (p.apvts, "auto_gain", autoBox);
     addAndMakeVisible (autoBox);
 
+    for (auto* d : { &outputDial, &scaleDial, &balanceDial })
+        d->setMidiLearn (&p);
+
     invertButton.setClickingTogglesState (true);
     invertButton.setTitle ("Invert polarity");
     invertButton.setTooltip ("Invert the polarity of the output.");
