@@ -4,3 +4,6 @@
 [submodule "extern/Catch2"]
 	path = extern/Catch2
 	url = https://github.com/catchorg/Catch2
+[submodule "extern/clap-juce-extensions"]
+	path = extern/clap-juce-extensions
+	url = https://github.com/free-audio/clap-juce-extensions

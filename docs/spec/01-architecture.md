@@ -7,7 +7,7 @@
 | Framework | JUCE 8.x, pinned by git tag as a submodule in `extern/JUCE` |
 | Language | C++20, no exceptions or RTTI on the audio path |
 | Build | CMake 3.22+, Ninja; presets in `CMakePresets.json` |
-| CLAP | `clap-juce-extensions` submodule (replace with JUCE's native CLAP target if the pinned JUCE provides one) |
+| CLAP | `clap-juce-extensions` submodule, pinned to main at `3837f4a` (2026-11-16): its 0.26.0 tag includes a header path that JUCE 8 no longer has |
 | FFT | `pffft` (BSD) wrapped in `of::Fft`; do not depend on `juce::dsp::FFT` backend selection |
 | Tests | Catch2 v3, pluginval, clap-validator, auval, Steinberg VST3 validator |
 | Fonts | Inter and JetBrains Mono (OFL), embedded through `juce_add_binary_data` |

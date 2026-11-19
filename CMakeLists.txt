@@ -11,6 +11,7 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
 option(OF_BUILD_PLUGIN "Build the plugin (needs JUCE)"        ON)
 option(OF_BUILD_TESTS  "Build unit tests"                     ON)
 option(OF_BUILD_AAX    "Build AAX (needs AAX_SDK_PATH)"       OFF)
+option(OF_BUILD_CLAP   "Build CLAP (via clap-juce-extensions)" ON)
 option(OF_INSTALL_AFTER_BUILD "Copy the built plugins to the user plugin folders" ON)
 
 if(MSVC)
@@ -90,6 +91,20 @@ if(OF_BUILD_PLUGIN)
     PUBLIC  juce::juce_recommended_config_flags
             juce::juce_recommended_warning_flags)
 
+  if(OF_BUILD_CLAP)
+    add_subdirectory(extern/clap-juce-extensions EXCLUDE_FROM_ALL)
+    clap_juce_extensions_plugin(TARGET OpenFilterEQ
+      CLAP_ID "org.openfilter.eq"
+      CLAP_FEATURES audio-effect equalizer stereo mono)
+    # Like the other formats, copy the result to the user's plugin folder (Linux path).
+    if(OF_INSTALL_AFTER_BUILD AND UNIX AND NOT APPLE)
+      add_custom_command(TARGET OpenFilterEQ_CLAP POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$ENV{HOME}/.clap"
+        COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:OpenFilterEQ_CLAP>" "$ENV{HOME}/.clap/"
+        VERBATIM)
+    endif()
+  endif()
+
   # Renders the editor to a PNG without a host and round-trips the state: tools/snapshot.cpp.
   # It reuses the plugin's own compiled code, so it borrows that target's include paths and
   # definitions instead of compiling the JUCE modules a second time.
@@ -111,6 +126,15 @@ if(OF_BUILD_PLUGIN)
       "$<GENEX_EVAL:$<TARGET_PROPERTY:OpenFilterEQ_VST3,JUCE_PLUGIN_ARTEFACT_FILE>>"
       "$<GENEX_EVAL:$<TARGET_PROPERTY:OpenFilterEQ_LV2,JUCE_PLUGIN_ARTEFACT_FILE>>")
     add_test(NAME of_snapshot COMMAND of_snapshot "${CMAKE_BINARY_DIR}/editor.png")
+
+    # A minimal CLAP host for the CLAP build: tests/integration/clap_test.cpp. POSIX only.
+    if(OF_BUILD_CLAP AND UNIX)
+      add_executable(of_clap_test tests/integration/clap_test.cpp)
+      target_include_directories(of_clap_test PRIVATE extern/clap-juce-extensions/clap-libs/clap/include)
+      target_link_libraries(of_clap_test PRIVATE ${CMAKE_DL_LIBS})
+      add_dependencies(of_clap_test OpenFilterEQ_CLAP)
+      add_test(NAME of_clap_test COMMAND of_clap_test "$<TARGET_FILE:OpenFilterEQ_CLAP>")
+    endif()
   endif()
 endif()
 

@@ -16,7 +16,7 @@ Milestone M1 (static EQ, zero latency) is built and M2 (full UI) is under way. B
 |---|---|
 | Specs | Written; kept in step with what the tests show |
 | DSP core (`src/dsp`): prototypes, matched design, filter kernel, engine | Built, unit tests pass |
-| Plugin (`src/plugin`): 781 parameters, processor, session state | Built; VST3, LV2 and Standalone on Linux |
+| Plugin (`src/plugin`): 781 parameters, processor, session state | Built; VST3, CLAP, LV2 and Standalone on Linux |
 | Editor (`src/ui`): response display with draggable bands, band dock, output meter | Built, first version |
 | Spectrum analyzer (input and output), JSON presets, typed values with note names | Built (first part of M2) |
 | Natural phase mode: filters at 4x, accurate to 20 kHz, 76 samples of latency at 44.1/48 kHz | Built (brought forward from M4) |
@@ -37,7 +37,8 @@ Milestone M1 (static EQ, zero latency) is built and M2 (full UI) is under way. B
 | Editing another instance from this window; instances in other processes; matching to another instance | Not yet |
 | Accessibility: dials are keyboard-operable sliders for screen readers, Tab steps through bands, selections are announced, focus is visible | Built (M7), not tested with a screen reader |
 | MIDI learn: right-click a dial, move a controller; mappings are saved with the session | Built (M7) |
-| CLAP, theme files, installers, manual (M7) | Not yet |
+| CLAP build, with a minimal CLAP host test | Built (M7) |
+| Theme files, installers, manual (M7) | Not yet |
 
 Known gaps:
 
@@ -66,11 +67,13 @@ cmake --build build
 cd build && ctest
 ```
 
-`ctest` runs three things: the DSP unit tests, a host test that loads the built VST3
-and LV2 the way a DAW does, and a tool that renders the editor to `build/editor.png`.
+`ctest` runs four things: the DSP unit tests, a host test that loads the built VST3
+and LV2 the way a DAW does, a minimal CLAP host that does the same for the CLAP, and a
+tool that renders the editor to `build/editor.png` and checks state, presets, slots,
+EQ match, the instance hub and MIDI learn.
 
 The plugins are in `build/OpenFilterEQ_artefacts/Release/`, and the build also copies
-them to your user plugin folders (`~/.vst3/` and `~/.lv2/` on Linux), so a rescan in
+them to your user plugin folders (`~/.vst3/`, `~/.clap/` and `~/.lv2/` on Linux), so a rescan in
 your DAW picks up the new version. Pass `-DOF_INSTALL_AFTER_BUILD=OFF` to turn that
 off. The `Standalone/OpenFilter EQ` binary runs on its own.
 
