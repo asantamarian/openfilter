@@ -30,7 +30,8 @@ Milestone M1 (static EQ, zero latency) is built and M2 (full UI) is under way. B
 | Spectral bands: a gain per frequency inside the band, with absolute and resonance modes | Built (M5) |
 | Character: Tube and Iron saturation at 4x, with drive (View menu; first voicing, not yet tuned by ear) | Built (M5) |
 | Nine factory presets; analyzer speed, tilt, range and freeze; piano strip; number keys to select bands; copy, paste and duplicate bands | Built |
-| Paged dock, multi-band selection, spectrogram, full screen, embedded fonts, a dock control for the free detector filter | Not yet |
+| Multi-band selection (shift-click, rubber band, Ctrl/Cmd+A) with group drag, scroll, nudge, copy and delete; paged dock; minimum window 800 x 560 | Built |
+| Spectrogram, full screen, embedded fonts, controls for drive and the free detector filter, relative editing from the dock for a multi-selection | Not yet |
 | EQ match (reference from the sidechain or an audio file) and curve sketching, on a shared curve fitter; sidechain trace in the analyzer | Built (M6) |
 | Instance hub: other instances in the same process drawn over the display, with collision strips | Built (M6) |
 | Editing another instance from this window; instances in other processes; matching to another instance | Not yet |

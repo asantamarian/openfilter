@@ -328,5 +328,27 @@ int main (int argc, char** argv)
         && juce::PNGImageFormat().writeImageToStream (editor->createComponentSnapshot (editor->getLocalBounds(), false, 1.0f), tableStream);
     std::printf ("%s %s\n", tableWritten ? "wrote" : "FAILED to write", tableFile.getFullPathName().toRawUTF8());
 
+    // The smallest window: the paged dock and the slimmed top bar.
+    processor.tableOpen = false;
+    processor.pianoStrip = false;
+    processor.displayRangeDb = 12.0;
+    processor.editorWidth = 800;
+    processor.editorHeight = 560;
+    editor.reset();
+    editor.reset (processor.createEditor());
+    if (auto* e = dynamic_cast<of::OpenFilterEditor*> (editor.get()))
+    {
+        e->responseDisplay().selectBand (b4);
+        e->updateNow();
+    }
+    const auto smallFile = out.getSiblingFile (out.getFileNameWithoutExtension() + "-small.png");
+    smallFile.deleteFile();
+    {
+        juce::FileOutputStream smallStream (smallFile);
+        if (smallStream.openedOk())
+            juce::PNGImageFormat().writeImageToStream (editor->createComponentSnapshot (editor->getLocalBounds(), false, 1.0f), smallStream);
+    }
+    std::printf ("wrote %s (%d x %d)\n", smallFile.getFullPathName().toRawUTF8(), editor->getWidth(), editor->getHeight());
+
     return written && tableWritten && roundTrip && presetOk && parseOk && slotsOk && factoryOk && matchOk && hubOk ? 0 : 1;
 }

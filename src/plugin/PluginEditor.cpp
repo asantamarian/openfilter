@@ -116,8 +116,8 @@ OpenFilterEditor::OpenFilterEditor (OpenFilterProcessor& p)
     // Read the saved size first: setting the limits resizes the editor, which stores a size.
     const int width = p.editorWidth, height = p.editorHeight;
     setResizable (true, true);
-    // The dock needs about 1180 px for its eight dials; narrower layouts need paging (later).
-    setResizeLimits (1180, 560, 8000, 8000);
+    // Below about 1180 px the dock pages its dials and the top bar sheds its extras.
+    setResizeLimits (800, 560, 8000, 8000);
     setSize (width, height);
     startTimerHz (30);
 }
@@ -143,34 +143,44 @@ void OpenFilterEditor::resized()
     // The band table covers the lower part of the display when open.
     table.setBounds (area.withTop (area.getBottom() - juce::jmin (area.getHeight() * 45 / 100, 26 * 12)));
 
+    // Top bar. As the window narrows it gives up, in this order: the latency readout and
+    // the auto gain readout, the undo and redo buttons (still in View > History and on
+    // Ctrl/Cmd+Z in the host), then the slot buttons.
+    const bool wide = getWidth() >= 1120, medium = getWidth() >= 960;
     auto right = topBar.reduced (16, 11);
     bypassButton.setBounds (right.removeFromRight (72));
     right.removeFromRight (8);
     deltaButton.setBounds (right.removeFromRight (64));
     right.removeFromRight (8);
     viewButton.setBounds (right.removeFromRight (56));
-    right.removeFromRight (16);
-    phaseBox.setBounds (right.removeFromRight (132));
+    right.removeFromRight (medium ? 16 : 8);
+    phaseBox.setBounds (right.removeFromRight (medium ? 132 : 112));
     right.removeFromRight (6);
-    // The quality selector only appears in the linear modes; the latency readout sits left of it.
+    // The quality selector only appears in the linear modes.
     if (qualityBox.isVisible())
     {
-        qualityBox.setBounds (right.removeFromRight (104));
+        qualityBox.setBounds (right.removeFromRight (medium ? 104 : 86));
         right.removeFromRight (6);
     }
-    latencyArea = right.removeFromRight (78);
-    right.removeFromRight (10);
-    autoBox.setBounds (right.removeFromRight (112));
-    autoArea = right.removeFromRight (58);
-    auto left = topBar.reduced (16, 11).withTrimmedLeft (170);
-    undoButton.setBounds (left.removeFromLeft (60));
-    left.removeFromLeft (6);
-    redoButton.setBounds (left.removeFromLeft (60));
-    left.removeFromLeft (16);
-    // The slot buttons give way first when the top bar runs out of room.
+    latencyArea = wide ? right.removeFromRight (78) : juce::Rectangle<int>();
+    right.removeFromRight (wide ? 10 : 0);
+    autoBox.setBounds (right.removeFromRight (medium ? 112 : 100));
+    autoArea = wide ? right.removeFromRight (58) : juce::Rectangle<int>();
+
+    auto left = topBar.reduced (16, 11).withTrimmedLeft (medium ? 170 : 150);
+    undoButton.setVisible (medium);
+    redoButton.setVisible (medium);
+    if (medium)
+    {
+        undoButton.setBounds (left.removeFromLeft (60));
+        left.removeFromLeft (6);
+        redoButton.setBounds (left.removeFromLeft (60));
+        left.removeFromLeft (16);
+    }
+    // The slot buttons give way when the bar runs out of room.
     const bool roomy = right.getRight() - left.getX() >= 90 + 16 + 4 * 30 + 3 * 2 + 12;
     const int slotsWidth = roomy ? 4 * 30 + 3 * 2 + 12 : 0;
-    presetButton.setBounds (left.removeFromLeft (juce::jlimit (90, 240, right.getRight() - left.getX() - 16 - slotsWidth)));
+    presetButton.setBounds (left.removeFromLeft (juce::jlimit (70, 240, right.getRight() - left.getX() - 10 - slotsWidth)));
     left.removeFromLeft (12);
     for (auto& b : slotButtons)
     {
@@ -226,17 +236,23 @@ void OpenFilterEditor::paint (juce::Graphics& g)
 
     g.setFont (theme::ui (14.0f, true));
     g.drawText ("OpenFilter", 50, 0, 80, kTopBarHeight, juce::Justification::centredLeft, false);
-    g.setColour (theme::textMuted);
-    g.setFont (theme::ui (14.0f));
-    g.drawText ("EQ", 128, 0, 30, kTopBarHeight, juce::Justification::centredLeft, false);
+    if (getWidth() >= 960)   // the "EQ" suffix is the first thing to go when space is short
+    {
+        g.setColour (theme::textMuted);
+        g.setFont (theme::ui (14.0f));
+        g.drawText ("EQ", 128, 0, 30, kTopBarHeight, juce::Justification::centredLeft, false);
+    }
 
     // Latency of the current phase mode.
-    g.setColour (theme::textMuted);
-    g.setFont (theme::mono (11.0f));
-    g.drawText (juce::String (processor.getLatencySamples()) + " smp", latencyArea, juce::Justification::centredRight, false);
+    if (! latencyArea.isEmpty())
+    {
+        g.setColour (theme::textMuted);
+        g.setFont (theme::mono (11.0f));
+        g.drawText (juce::String (processor.getLatencySamples()) + " smp", latencyArea, juce::Justification::centredRight, false);
+    }
 
     // What auto gain is doing right now.
-    if (autoBox.getSelectedItemIndex() > 0)
+    if (autoBox.getSelectedItemIndex() > 0 && ! autoArea.isEmpty())
     {
         g.setColour (theme::accent);
         g.setFont (theme::mono (11.0f));

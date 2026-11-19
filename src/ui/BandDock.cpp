@@ -62,6 +62,16 @@ BandDock::BandDock (OpenFilterProcessor& p) : processor (p)
     linearButton.setTooltip ("In Mixed phase mode: realise this band with linear phase. Its dynamics do not run while it is linear.");
     addChildComponent (linearButton);
 
+    pageButton.setTitle ("Switch between the filter and dynamics controls");
+    pageButton.onClick = [this]
+    {
+        page = 1 - page;
+        resized();
+        refresh();
+        repaint();
+    };
+    addChildComponent (pageButton);
+
     soloButton.setTooltip ("Hear only the part of the signal this band works on. Also: hold S in the display.");
     soloButton.onClick = [this]
     {
@@ -193,8 +203,8 @@ void BandDock::refresh()
         // Spectral bands swap the sidechain button for the resonance switch; in resonance
         // mode the threshold is relative by nature, so Auto does not apply.
         const bool spectralBand = dynOn && b.dyn.spectral;
-        externalButton.setVisible (! spectralBand);
-        resonanceButton.setVisible (spectralBand);
+        externalButton.setVisible (dynamicsShown && ! spectralBand);
+        resonanceButton.setVisible (dynamicsShown && spectralBand);
         autoButton.setEnabled (dynOn && ! (spectralBand && b.dyn.resonance));
         externalButton.setEnabled (dynOn);
         externalButton.setToggleState (dynOn && b.dyn.external, juce::dontSendNotification);
@@ -235,7 +245,8 @@ void BandDock::paint (juce::Graphics& g)
     g.setColour (theme::line);
     g.fillRect (0, 0, getWidth(), 1);
     g.fillRect (shapeArea.getX() - 13, 14, 1, getHeight() - 28);
-    g.fillRect (dialsArea.getX() - 13, 14, 1, getHeight() - 28);
+    if (filterShown)
+        g.fillRect (dialsArea.getX() - 13, 14, 1, getHeight() - 28);
 
     // Band chips, in slot order.
     int count = 0, index = 0;
@@ -262,14 +273,23 @@ void BandDock::paint (juce::Graphics& g)
         g.drawText ("No bands yet", chipsArea.withTrimmedTop (22).withHeight (kChipH), juce::Justification::centredLeft, false);
     }
 
-    theme::drawLabel (g, "Shape", shapeArea.withHeight (14));
-    theme::drawLabel (g, "Filter", dialsArea.withHeight (14));
-    theme::drawLabel (g, "Dynamics", dynArea.withHeight (14));
-    g.setColour (theme::line);
-    g.fillRect (dynArea.getX() - 13, 14, 1, getHeight() - 28);
+    if (filterShown)
+    {
+        theme::drawLabel (g, "Shape", shapeArea.withHeight (14));
+        theme::drawLabel (g, "Filter", dialsArea.withHeight (14));
+    }
+    if (dynamicsShown)
+    {
+        theme::drawLabel (g, "Dynamics", dynArea.withHeight (14));
+        if (! paged)
+        {
+            g.setColour (theme::line);
+            g.fillRect (dynArea.getX() - 13, 14, 1, getHeight() - 28);
+        }
+    }
 
     // Live dynamic gain of the selected band.
-    if (band >= 0 && current.dyn.on && canBeDynamic (current.shape))   // dynamic or spectral
+    if (dynamicsShown && ! paged && band >= 0 && current.dyn.on && canBeDynamic (current.shape))   // dynamic or spectral
     {
         g.setColour (theme::band (band));
         g.setFont (theme::mono (11.0f));
@@ -280,7 +300,8 @@ void BandDock::paint (juce::Graphics& g)
     {
         g.setColour (theme::band (band));
         g.setFont (theme::ui (11.0f, true));
-        g.drawText ("Band " + juce::String (band + 1), shapeArea.withHeight (14), juce::Justification::centredRight, false);
+        g.drawText ("Band " + juce::String (band + 1), filterShown ? shapeArea.withHeight (14) : dynArea.withHeight (14).withTrimmedLeft (80).withWidth (90),
+                    filterShown ? juce::Justification::centredRight : juce::Justification::centredLeft, false);
     }
 }
 
@@ -305,6 +326,23 @@ void BandDock::resized()
     buttons.removeFromLeft (5);
     linearButton.setBounds (buttons.removeFromLeft (44));
 
+    // With room for all eight dials everything shows at once. Otherwise the dock has two
+    // pages: Filter (shape, slope, channel and three dials) and Dynamics (mode and five dials).
+    const int needed = 3 * 56 + 24 + 96 + 8 + 5 * 56;
+    paged = dialsArea.getWidth() < needed;
+    const bool showFilter = ! paged || page == 0, showDynamics = ! paged || page == 1;
+
+    pageButton.setVisible (paged);
+    pageButton.setButtonText (page == 0 ? "Dynamics >" : "< Filter");
+    pageButton.setBounds (getWidth() - 20 - 104, 8, 104, 22);
+
+    for (auto* c : std::initializer_list<juce::Component*> { &shapeBox, &slopeBox, &placeBox, &freqDial, &gainDial, &qDial })
+        c->setVisible (showFilter);
+    for (auto* c : std::initializer_list<juce::Component*> { &dynBox, &autoButton, &thrDial, &rangeDial, &ratioDial, &atkDial, &relDial })
+        c->setVisible (showDynamics);
+    dynamicsShown = showDynamics;
+    filterShown = showFilter;
+
     // Shape, slope and channel stacked.
     auto s = shapeArea;
     s.removeFromTop (22);
@@ -314,31 +352,46 @@ void BandDock::resized()
     s.removeFromTop (8);
     placeBox.setBounds (s.removeFromTop (30));
 
-    // Filter dials on the left, dynamics on the right; dials shrink a little when space is tight.
-    const int dialW = juce::jlimit (54, 92, (dialsArea.getWidth() - 24 - 96 - 8 - 16) / 8);
     auto d = dialsArea.withTrimmedTop (20);
-    for (auto* dial : { &freqDial, &gainDial, &qDial })
-    {
-        dial->setBounds (d.removeFromLeft (dialW));
-        d.removeFromLeft (2);
-    }
-    d.removeFromLeft (24);
-    dynArea = d.withTop (dialsArea.getY());
-    dialsArea.setRight (dynArea.getX() - 26);
+    if (paged && page == 1)
+        d = shapeArea.withRight (dialsArea.getRight()).withTrimmedTop (20);   // the Dynamics page takes the shape column too
 
-    auto modeColumn = d.removeFromLeft (96);
-    dynBox.setBounds (modeColumn.removeFromTop (30));
-    modeColumn.removeFromTop (10);
-    autoButton.setBounds (modeColumn.removeFromTop (28));
-    modeColumn.removeFromTop (6);
-    externalButton.setBounds (modeColumn.removeFromTop (28));
-    resonanceButton.setBounds (externalButton.getBounds());
-    d.removeFromLeft (8);
-    for (auto* dial : { &thrDial, &rangeDial, &ratioDial, &atkDial, &relDial })
+    const int dialCount = paged ? (page == 0 ? 3 : 5) : 8;
+    const int fixed = paged ? (page == 0 ? 0 : 96 + 8) : 24 + 96 + 8;
+    const int dialW = juce::jlimit (50, 92, (d.getWidth() - fixed - 2 * dialCount) / dialCount);
+
+    if (showFilter)
     {
-        dial->setBounds (d.removeFromLeft (dialW));
-        d.removeFromLeft (2);
+        for (auto* dial : { &freqDial, &gainDial, &qDial })
+        {
+            dial->setBounds (d.removeFromLeft (dialW));
+            d.removeFromLeft (2);
+        }
+        if (! paged)
+            d.removeFromLeft (24);
     }
+    if (showDynamics)
+    {
+        dynArea = d.withTop (dialsArea.getY());
+        if (! paged)
+            dialsArea.setRight (dynArea.getX() - 26);
+
+        auto modeColumn = d.removeFromLeft (96);
+        dynBox.setBounds (modeColumn.removeFromTop (30));
+        modeColumn.removeFromTop (10);
+        autoButton.setBounds (modeColumn.removeFromTop (28));
+        modeColumn.removeFromTop (6);
+        externalButton.setBounds (modeColumn.removeFromTop (28));
+        resonanceButton.setBounds (externalButton.getBounds());
+        d.removeFromLeft (8);
+        for (auto* dial : { &thrDial, &rangeDial, &ratioDial, &atkDial, &relDial })
+        {
+            dial->setBounds (d.removeFromLeft (dialW));
+            d.removeFromLeft (2);
+        }
+    }
+    else
+        dynArea = {};
 }
 
 void BandDock::mouseDown (const juce::MouseEvent& e)

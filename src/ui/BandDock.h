@@ -45,6 +45,9 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoAttachment;
     juce::Rectangle<int> dynArea;
     float liveDyn = 0.0f;
+    juce::TextButton pageButton;
+    bool paged = false, filterShown = true, dynamicsShown = true;
+    int page = 0;
     juce::TextButton bypassButton { "Bypass" }, deleteButton { "Delete" };
     juce::Rectangle<int> chipsArea, shapeArea, dialsArea;
 

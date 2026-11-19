@@ -299,7 +299,7 @@ void OpenFilterProcessor::setStateInformation (const void* data, int size)
     const auto ui = root.getChildWithName ("Ui");
     if (ui.isValid())
     {
-        editorWidth = juce::jlimit (1180, 8000, static_cast<int> (ui.getProperty ("width", 1280)));
+        editorWidth = juce::jlimit (800, 8000, static_cast<int> (ui.getProperty ("width", 1280)));
         editorHeight = juce::jlimit (560, 8000, static_cast<int> (ui.getProperty ("height", 800)));
         presetName = ui.getProperty ("preset", "").toString();
         uiScale = juce::jlimit (0.5f, 2.0f, static_cast<float> (ui.getProperty ("scale", 1.0)));

@@ -46,7 +46,9 @@ float ResponseDisplay::dbToY (double db) const noexcept
     const float plotH = static_cast<float> (getHeight() - kAxisHeight);
     const float centre = 0.5f * plotH;
     const float pxPerDb = (centre - 28.0f) / static_cast<float> (rangeDb);
-    return centre - static_cast<float> (juce::jlimit (-rangeDb * 1.15, rangeDb * 1.15, db)) * pxPerDb;
+    // Limit the position, not the gain: a curve that leaves the range must run off the plot
+    // (where it is clipped), not flatten into a line inside it.
+    return juce::jlimit (-24.0f, plotH + 24.0f, centre - static_cast<float> (db) * pxPerDb);
 }
 
 double ResponseDisplay::yToDb (float y) const noexcept
@@ -100,8 +102,17 @@ void ResponseDisplay::refresh()
             changed = true;
         }
     }
+    for (int i = 0; i < kMaxBands; ++i)   // deleted bands leave the selection
+        if (! bands[static_cast<size_t> (i)].used)
+            inSelection[static_cast<size_t> (i)] = false;
     if (selected >= 0 && ! bands[static_cast<size_t> (selected)].used)
-        selectBand (-1);
+    {
+        int other = -1;
+        for (int i = 0; i < kMaxBands; ++i)
+            if (inSelection[static_cast<size_t> (i)])
+                other = i;
+        if (other >= 0) setPrimary (other); else selectBand (-1);
+    }
     if (changed)
     {
         rebuildCurves();
@@ -204,10 +215,35 @@ void ResponseDisplay::rebuildSpectra()
     }
 }
 
-void ResponseDisplay::selectBand (int band)
+int ResponseDisplay::selectionCount() const noexcept
+{
+    return static_cast<int> (std::count (inSelection.begin(), inSelection.end(), true));
+}
+
+void ResponseDisplay::setPrimary (int band)
 {
     if (band == selected)
         return;
+    selected = band;
+    if (band >= 0)
+        inSelection[static_cast<size_t> (band)] = true;
+    rebuildCurves();
+    repaint();
+    if (onSelectionChanged)
+        onSelectionChanged (selected);
+}
+
+void ResponseDisplay::selectBand (int band)
+{
+    // Selecting one band (or none) replaces any multi-selection.
+    inSelection.fill (false);
+    if (band >= 0)
+        inSelection[static_cast<size_t> (band)] = true;
+    if (band == selected)
+    {
+        repaint();
+        return;
+    }
     selected = band;
     rebuildCurves();
     repaint();
@@ -563,6 +599,11 @@ void ResponseDisplay::paint (juce::Graphics& g)
             g.setColour (c);
             g.drawEllipse (circle.expanded (3.5f), 2.0f);
         }
+        else if (inSelection[static_cast<size_t> (i)])   // selected along with the primary band
+        {
+            g.setColour (c.withAlpha (0.75f));
+            g.drawEllipse (circle.expanded (3.5f), 1.2f);
+        }
         else if (i == hovered)
         {
             g.setColour (c.withAlpha (0.4f));
@@ -591,6 +632,14 @@ void ResponseDisplay::paint (juce::Graphics& g)
             g.drawText (tags[static_cast<int> (b.place)], circle.translated (0.0f, kNodeRadius + 10.0f), juce::Justification::centred, false);
             g.setFont (theme::mono (11.0f));
         }
+    }
+
+    if (rubbering && ! rubber.isEmpty())
+    {
+        g.setColour (theme::accent.withAlpha (0.08f));
+        g.fillRect (rubber);
+        g.setColour (theme::accent.withAlpha (0.7f));
+        g.drawRect (rubber, 1.0f);
     }
 
     // Value tag next to the selected band.
@@ -657,9 +706,39 @@ void ResponseDisplay::mouseDown (const juce::MouseEvent& e)
         return;
     }
     const int band = bandAt (e.position);
-    selectBand (band);
+
     if (band < 0)
+    {
+        // Empty space: a drag from here is a rubber band; a plain click deselects.
+        rubberStart = e.position;
+        rubber = {};
+        rubbering = true;
         return;
+    }
+
+    if (e.mods.isShiftDown() && ! e.mods.isPopupMenu())
+    {
+        // Shift-click adds a band to the selection or takes it out.
+        auto& member = inSelection[static_cast<size_t> (band)];
+        member = ! member;
+        if (member)
+            setPrimary (band);
+        else if (band == selected)
+        {
+            int other = -1;
+            for (int i = 0; i < kMaxBands; ++i)
+                if (inSelection[static_cast<size_t> (i)])
+                    other = i;
+            setPrimary (other);
+        }
+        repaint();
+        return;
+    }
+
+    if (! inSelection[static_cast<size_t> (band)])
+        selectBand (band);   // clicking outside the selection replaces it
+    else
+        setPrimary (band);
 
     if (e.mods.isPopupMenu())
     {
@@ -673,13 +752,19 @@ void ResponseDisplay::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
+    // Drag: the grabbed band follows the pointer; the rest of the selection moves with it,
+    // by the same frequency ratio and the same gain difference.
     dragging = band;
     dragHasGain = hasGain (bands[static_cast<size_t> (band)].shape);
     dragOffset = nodePosition (bands[static_cast<size_t> (band)]) - e.position;
-    processor.undo.beginNewTransaction ("Move band " + juce::String (band + 1));
-    processor.bandParam (band, "freq")->beginChangeGesture();
-    if (dragHasGain)
-        processor.bandParam (band, "gain")->beginChangeGesture();
+    dragStart = bands;
+    processor.undo.beginNewTransaction (selectionCount() > 1 ? juce::String ("Move bands") : "Move band " + juce::String (band + 1));
+    for (int i = 0; i < kMaxBands; ++i)
+        if (inSelection[static_cast<size_t> (i)])
+        {
+            processor.bandParam (i, "freq")->beginChangeGesture();
+            processor.bandParam (i, "gain")->beginChangeGesture();
+        }
 }
 
 void ResponseDisplay::mouseDrag (const juce::MouseEvent& e)
@@ -694,17 +779,33 @@ void ResponseDisplay::mouseDrag (const juce::MouseEvent& e)
         }
         return;
     }
+    if (rubbering)
+    {
+        rubber = juce::Rectangle<float> (rubberStart, e.position);
+        for (int i = 0; i < kMaxBands; ++i)
+            inSelection[static_cast<size_t> (i)] = bands[static_cast<size_t> (i)].used && rubber.contains (nodePosition (bands[static_cast<size_t> (i)]));
+        repaint();
+        return;
+    }
     if (dragging < 0)
         return;
     auto p = e.position + dragOffset;
     if (e.mods.isShiftDown())   // fine: a tenth of the pointer travel
         p = e.mouseDownPosition + dragOffset + (e.position - e.mouseDownPosition) * 0.1f;
 
-    processor.setBandValue (dragging, "freq", static_cast<float> (juce::jlimit (10.0, 30000.0, xToFreq (p.x))));
-    if (dragHasGain)
+    const auto& grabbed = dragStart[static_cast<size_t> (dragging)];
+    const double s = std::abs (scale) > 1.0e-6 ? scale : 1.0;
+    const double ratio = juce::jlimit (10.0, 30000.0, xToFreq (p.x)) / grabbed.freq;
+    const double gainDelta = dragHasGain ? juce::jlimit (-30.0, 30.0, yToDb (p.y) / s) - grabbed.gainDb : 0.0;
+
+    for (int i = 0; i < kMaxBands; ++i)
     {
-        const double s = std::abs (scale) > 1.0e-6 ? scale : 1.0;
-        processor.setBandValue (dragging, "gain", static_cast<float> (juce::jlimit (-30.0, 30.0, yToDb (p.y) / s)));
+        if (! inSelection[static_cast<size_t> (i)])
+            continue;
+        const auto& from = dragStart[static_cast<size_t> (i)];
+        processor.setBandValue (i, "freq", static_cast<float> (juce::jlimit (10.0, 30000.0, from.freq * ratio)));
+        if (hasGain (from.shape))
+            processor.setBandValue (i, "gain", static_cast<float> (juce::jlimit (-30.0, 30.0, from.gainDb + gainDelta)));
     }
     refresh();
 }
@@ -713,9 +814,12 @@ void ResponseDisplay::endDrag()
 {
     if (dragging < 0)
         return;
-    processor.bandParam (dragging, "freq")->endChangeGesture();
-    if (dragHasGain)
-        processor.bandParam (dragging, "gain")->endChangeGesture();
+    for (int i = 0; i < kMaxBands; ++i)
+        if (inSelection[static_cast<size_t> (i)])
+        {
+            processor.bandParam (i, "freq")->endChangeGesture();
+            processor.bandParam (i, "gain")->endChangeGesture();
+        }
     dragging = -1;
 }
 
@@ -751,6 +855,23 @@ void ResponseDisplay::mouseUp (const juce::MouseEvent&)
         sketchPoints.clear();
         sketchPath.clear();
         refresh();
+        repaint();
+        return;
+    }
+    if (rubbering)
+    {
+        rubbering = false;
+        if (rubber.getWidth() < 3.0f && rubber.getHeight() < 3.0f)
+            selectBand (-1);   // a click on empty space
+        else
+        {
+            int first = -1;
+            for (int i = kMaxBands; --i >= 0;)
+                if (inSelection[static_cast<size_t> (i)])
+                    first = i;
+            setPrimary (first);
+        }
+        rubber = {};
         repaint();
         return;
     }
@@ -791,7 +912,10 @@ void ResponseDisplay::mouseWheelMove (const juce::MouseEvent& e, const juce::Mou
     if (band < 0 || dragging >= 0)
         return;
     const double factor = std::pow (e.mods.isShiftDown() ? 1.05 : 1.5, static_cast<double> (wheel.deltaY) * 4.0);
-    processor.setBandValue (band, "q", static_cast<float> (juce::jlimit (0.025, 40.0, bands[static_cast<size_t> (band)].q * factor)));
+    // Over a selected band the whole selection changes Q by the same ratio.
+    for (int i = 0; i < kMaxBands; ++i)
+        if (i == band || (inSelection[static_cast<size_t> (band)] && inSelection[static_cast<size_t> (i)]))
+            processor.setBandValue (i, "q", static_cast<float> (juce::jlimit (0.025, 40.0, bands[static_cast<size_t> (i)].q * factor)));
     refresh();
 }
 
@@ -849,20 +973,42 @@ bool ResponseDisplay::keyPressed (const juce::KeyPress& key)
         }
         return true;
     }
+    // Select every band.
+    if (mods.isCommandDown() && (code == 'a' || code == 'A'))
+    {
+        int first = -1;
+        for (int i = kMaxBands; --i >= 0;)
+        {
+            inSelection[static_cast<size_t> (i)] = bands[static_cast<size_t> (i)].used;
+            if (bands[static_cast<size_t> (i)].used)
+                first = i;
+        }
+        if (selected < 0 || ! bands[static_cast<size_t> (selected)].used)
+            setPrimary (first);
+        repaint();
+        return true;
+    }
     if (selected < 0)
         return false;
 
-    // Copy and duplicate the selected band.
+    // Copy and duplicate the selection.
     if (mods.isCommandDown() && (code == 'c' || code == 'C'))
     {
-        juce::Array<juce::var> list { presets::bandToVar (processor, selected) };
+        juce::Array<juce::var> list;
+        for (int i = 0; i < kMaxBands; ++i)
+            if (inSelection[static_cast<size_t> (i)])
+                list.add (presets::bandToVar (processor, i));
         juce::SystemClipboard::copyTextToClipboard (juce::JSON::toString (juce::var (list)));
         return true;
     }
     if (mods.isCommandDown() && (code == 'd' || code == 'D'))
     {
-        processor.undo.beginNewTransaction ("Duplicate band");
-        const int copy = presets::addBandFromVar (processor, presets::bandToVar (processor, selected));
+        processor.undo.beginNewTransaction ("Duplicate bands");
+        const auto members = inSelection;
+        int copy = -1;
+        for (int i = 0; i < kMaxBands; ++i)
+            if (members[static_cast<size_t> (i)])
+                copy = juce::jmax (copy, presets::addBandFromVar (processor, presets::bandToVar (processor, i)));
         refresh();
         if (copy >= 0)
             selectBand (copy);
@@ -872,7 +1018,10 @@ bool ResponseDisplay::keyPressed (const juce::KeyPress& key)
 
     if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey)
     {
-        processor.removeBand (selected);
+        const auto members = inSelection;
+        for (int i = 0; i < kMaxBands; ++i)
+            if (members[static_cast<size_t> (i)])
+                processor.removeBand (i);
         refresh();
         return true;
     }
@@ -880,7 +1029,9 @@ bool ResponseDisplay::keyPressed (const juce::KeyPress& key)
     {
         const double semis = (key.getModifiers().isShiftDown() ? 0.1 : 1.0) * (key.getKeyCode() == juce::KeyPress::leftKey ? -1.0 : 1.0);
         processor.undo.beginNewTransaction ("Nudge frequency");
-        processor.setBandValue (selected, "freq", static_cast<float> (juce::jlimit (10.0, 30000.0, b.freq * std::pow (2.0, semis / 12.0))));
+        for (int i = 0; i < kMaxBands; ++i)
+            if (inSelection[static_cast<size_t> (i)])
+                processor.setBandValue (i, "freq", static_cast<float> (juce::jlimit (10.0, 30000.0, bands[static_cast<size_t> (i)].freq * std::pow (2.0, semis / 12.0))));
         refresh();
         return true;
     }
@@ -888,7 +1039,9 @@ bool ResponseDisplay::keyPressed (const juce::KeyPress& key)
     {
         const double step = (key.getModifiers().isShiftDown() ? 0.1 : 0.5) * (key.getKeyCode() == juce::KeyPress::upKey ? 1.0 : -1.0);
         processor.undo.beginNewTransaction ("Nudge gain");
-        processor.setBandValue (selected, "gain", static_cast<float> (juce::jlimit (-30.0, 30.0, b.gainDb + step)));
+        for (int i = 0; i < kMaxBands; ++i)
+            if (inSelection[static_cast<size_t> (i)] && hasGain (bands[static_cast<size_t> (i)].shape))
+                processor.setBandValue (i, "gain", static_cast<float> (juce::jlimit (-30.0, 30.0, bands[static_cast<size_t> (i)].gainDb + step)));
         refresh();
         return true;
     }

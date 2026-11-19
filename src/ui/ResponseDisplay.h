@@ -18,8 +18,14 @@ public:
     /** Called from the editor's timer: re-reads the bands and repaints if they changed. */
     void refresh();
 
+    /** The primary selected band (the one the dock shows), or -1. */
     int selectedBand() const noexcept { return selected; }
+    /** Selects one band, or none; replaces any multi-selection. */
     void selectBand (int band);
+    /** How many bands are selected. Shift-click, a rubber band or Ctrl/Cmd+A select several;
+        dragging, scrolling, nudging, copying and deleting then act on all of them. */
+    int selectionCount() const noexcept;
+    bool isSelected (int band) const noexcept { return inSelection[static_cast<size_t> (band)]; }
     std::function<void (int)> onSelectionChanged;
 
     /** Vertical range of the gain axis: 3, 6, 12 or 30 dB each way. */
@@ -75,6 +81,7 @@ private:
     void rebuildSpectra();
     void showBandMenu (int band);
     void endDrag();
+    void setPrimary (int band);
 
     OpenFilterProcessor& processor;
     std::array<BandParams, kMaxBands> bands {};
@@ -83,6 +90,11 @@ private:
     int selected = -1, hovered = -1, dragging = -1;
     bool dragHasGain = false, soloHeld = false;
     juce::Point<float> dragOffset;
+    std::array<bool, kMaxBands> inSelection {};
+    std::array<BandParams, kMaxBands> dragStart {};
+    juce::Point<float> rubberStart;
+    juce::Rectangle<float> rubber;
+    bool rubbering = false;
     juce::Path compositePath, selectedPath, selectedFill, rangePath;
     std::array<float, kMaxBands> liveDyn {};
 
