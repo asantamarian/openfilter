@@ -46,19 +46,26 @@ int main (int argc, char** argv)
     std::printf ("state round trip: %s (%d bytes, %d parameters)\n", roundTrip ? "ok" : "MISMATCH",
                  static_cast<int> (first.getSize()), processor.getParameters().size());
 
-    // Run some audio through so the meters show something.
+    std::unique_ptr<juce::AudioProcessorEditor> editor (processor.createEditor());
+
+    // Run some audio through so the meters and the analyzer show something: pink-ish noise
+    // plus a 440 Hz tone. The analyzer taps only run while an editor exists.
     juce::AudioBuffer<float> buffer (2, 512);
     juce::MidiBuffer midi;
     juce::Random random (1);
-    for (int block = 0; block < 20; ++block)
+    float pink = 0.0f;
+    for (int block = 0; block < 40; ++block)
     {
-        for (int ch = 0; ch < 2; ++ch)
-            for (int i = 0; i < 512; ++i)
-                buffer.setSample (ch, i, random.nextFloat() * 0.5f - 0.25f);
+        for (int i = 0; i < 512; ++i)
+        {
+            pink = 0.985f * pink + 0.06f * (random.nextFloat() * 2.0f - 1.0f);
+            const float s = pink + 0.02f * (random.nextFloat() * 2.0f - 1.0f)
+                          + 0.1f * std::sin (juce::MathConstants<float>::twoPi * 440.0f * static_cast<float> (block * 512 + i) / 48000.0f);
+            buffer.setSample (0, i, s);
+            buffer.setSample (1, i, s);
+        }
         processor.processBlock (buffer, midi);
     }
-
-    std::unique_ptr<juce::AudioProcessorEditor> editor (processor.createEditor());
     if (auto* e = dynamic_cast<of::OpenFilterEditor*> (editor.get()))
     {
         e->responseDisplay().selectBand (b4);

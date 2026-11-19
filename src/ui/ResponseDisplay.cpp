@@ -17,13 +17,17 @@ bool sameBand (const BandParams& a, const BandParams& b)
 }
 } // namespace
 
-ResponseDisplay::ResponseDisplay (OpenFilterProcessor& p) : processor (p)
+ResponseDisplay::ResponseDisplay (OpenFilterProcessor& p)
+    : processor (p), preAnalyzer (p.preFifo), postAnalyzer (p.postFifo)
 {
+    processor.analyzerActive = true;
     setWantsKeyboardFocus (true);
     setTitle ("Equalizer response");
     setDescription ("Double-click to add a band. Drag a band to change frequency and gain, scroll to change Q.");
     refresh();
 }
+
+ResponseDisplay::~ResponseDisplay() { processor.analyzerActive = false; }
 
 //==============================================================================
 float ResponseDisplay::freqToX (double f) const noexcept
@@ -101,6 +105,66 @@ void ResponseDisplay::refresh()
     {
         rebuildCurves();
         repaint();
+    }
+
+    // Analyzer: pull what the audio thread queued and redraw while anything is showing.
+    const auto now = juce::Time::getMillisecondCounter();
+    const double elapsed = lastUpdateMs == 0 ? 0.0 : (now - lastUpdateMs) * 0.001;
+    lastUpdateMs = now;
+    preAnalyzer.setSampleRate (processor.getSampleRate());
+    postAnalyzer.setSampleRate (processor.getSampleRate());
+    const bool preLive = preAnalyzer.update (elapsed), postLive = postAnalyzer.update (elapsed);
+    if (preLive || postLive || spectraShown)
+    {
+        spectraShown = preLive || postLive;
+        rebuildSpectra();
+        repaint();
+    }
+}
+
+void ResponseDisplay::rebuildSpectra()
+{
+    preFill.clear();
+    postLine.clear();
+    const int w = getWidth();
+    if (w <= 0 || ! spectraShown)
+        return;
+
+    const int step = 2, count = w / step + 1;
+    const float plotBottom = static_cast<float> (getHeight() - kAxisHeight);
+    // Analyzer scale: -90 dBFS at the bottom of the plot, 0 dBFS at the top.
+    const auto toY = [plotBottom] (float db) { return plotBottom * (1.0f - juce::jlimit (0.0f, 1.0f, (db + 90.0f) / 90.0f)); };
+    // 1/6-octave smoothing: display points are evenly spaced in log frequency.
+    const int half = juce::jmax (1, juce::roundToInt (count / std::log2 (kMaxFreq / kMinFreq) / 12.0));
+
+    const auto trace = [&] (const SpectrumAnalyzer& analyzer)
+    {
+        spectrumPoints.resize (static_cast<size_t> (count));
+        spectrumSmooth.resize (static_cast<size_t> (count));
+        for (int i = 0; i < count; ++i)
+            spectrumPoints[static_cast<size_t> (i)] = analyzer.peakBetween (xToFreq (static_cast<float> (i * step - 1)), xToFreq (static_cast<float> (i * step + 1)));
+        for (int i = 0; i < count; ++i)
+        {
+            float sum = 0.0f;
+            int n = 0;
+            for (int j = juce::jmax (0, i - half); j <= juce::jmin (count - 1, i + half); ++j, ++n)
+                sum += spectrumPoints[static_cast<size_t> (j)];
+            spectrumSmooth[static_cast<size_t> (i)] = sum / static_cast<float> (n);
+        }
+    };
+
+    trace (preAnalyzer);
+    preFill.startNewSubPath (0.0f, plotBottom);
+    for (int i = 0; i < count; ++i)
+        preFill.lineTo (static_cast<float> (i * step), toY (spectrumSmooth[static_cast<size_t> (i)]));
+    preFill.lineTo (static_cast<float> (w), plotBottom);
+    preFill.closeSubPath();
+
+    trace (postAnalyzer);
+    for (int i = 0; i < count; ++i)
+    {
+        const float y = toY (spectrumSmooth[static_cast<size_t> (i)]);
+        if (i == 0) postLine.startNewSubPath (0.0f, y); else postLine.lineTo (static_cast<float> (i * step), y);
     }
 }
 
@@ -211,6 +275,15 @@ void ResponseDisplay::paint (juce::Graphics& g)
     {
         juce::Graphics::ScopedSaveState clip (g);
         g.reduceClipRegion (0, 0, getWidth(), getHeight() - kAxisHeight);
+
+        // Analyzer: input as a quiet fill, output as an accent line.
+        if (! preFill.isEmpty())
+        {
+            g.setColour (juce::Colour (0xff5B6B8A).withAlpha (0.2f));
+            g.fillPath (preFill);
+            g.setColour (theme::accent.withAlpha (0.5f));
+            g.strokePath (postLine, juce::PathStrokeType (1.0f));
+        }
 
         // Selected band: fill and outline in its colour.
         if (! selectedPath.isEmpty())

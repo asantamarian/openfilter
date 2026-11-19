@@ -32,6 +32,7 @@ void OpenFilterProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     maxBlock = juce::jmax (16, samplesPerBlock);
     for (auto& w : work)
         w.assign (static_cast<size_t> (maxBlock), 0.0);
+    tap.assign (static_cast<size_t> (maxBlock), 0.0f);
     engine.prepare (sampleRate, maxBlock, getMainBusNumOutputChannels());
     setLatencySamples (engine.latencySamples());
 }
@@ -94,7 +95,19 @@ void OpenFilterProcessor::process (juce::AudioBuffer<Sample>& buffer)
                 io[ch][i] = static_cast<double> (src[i]);
         }
 
+        const bool analyse = analyzerActive.load (std::memory_order_relaxed);
+        const auto pushTap = [&] (SpscFifo& fifo)
+        {
+            for (int i = 0; i < n; ++i)
+                tap[static_cast<size_t> (i)] = static_cast<float> (channels > 1 ? 0.5 * (io[0][i] + io[1][i]) : io[0][i]);
+            fifo.push (tap.data(), static_cast<size_t> (n));
+        };
+
+        if (analyse)
+            pushTap (preFifo);
         engine.process (io, channels, n, snapshot);
+        if (analyse)
+            pushTap (postFifo);
 
         for (int ch = 0; ch < channels; ++ch)
         {

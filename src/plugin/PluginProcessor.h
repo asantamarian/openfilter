@@ -4,6 +4,7 @@
 
 #include "Parameters.h"
 #include "dsp/Engine.h"
+#include "dsp/util/SpscFifo.h"
 
 namespace of
 {
@@ -51,6 +52,10 @@ public:
 
     float takePeak (int channel) noexcept { return engine.takePeak (channel); }
 
+    // Analyzer taps (mono sum), written by the audio thread only while an editor is open.
+    SpscFifo preFifo, postFifo;
+    std::atomic<bool> analyzerActive { false };
+
     juce::UndoManager undo;
     juce::AudioProcessorValueTreeState apvts;
 
@@ -69,6 +74,7 @@ private:
                       * invertPtr = nullptr, *bypassPtr = nullptr, *deltaPtr = nullptr;
     juce::AudioProcessorParameter* bypassParam = nullptr;
     std::vector<double> work[2];
+    std::vector<float> tap;
     int maxBlock = 512;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (OpenFilterProcessor)

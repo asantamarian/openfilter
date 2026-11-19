@@ -65,6 +65,7 @@ if(OF_BUILD_PLUGIN)
     src/plugin/PluginProcessor.cpp
     src/plugin/PluginEditor.cpp
     src/ui/ResponseDisplay.cpp
+    src/ui/SpectrumAnalyzer.cpp
     src/ui/BandDock.cpp
     src/ui/Dial.cpp)
   target_include_directories(OpenFilterEQ PRIVATE src)

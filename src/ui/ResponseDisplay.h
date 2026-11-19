@@ -1,5 +1,6 @@
 #pragma once
 
+#include "SpectrumAnalyzer.h"
 #include "Theme.h"
 #include "plugin/PluginProcessor.h"
 
@@ -11,6 +12,7 @@ class ResponseDisplay final : public juce::Component
 {
 public:
     explicit ResponseDisplay (OpenFilterProcessor&);
+    ~ResponseDisplay() override;
 
     /** Called from the editor's timer: re-reads the bands and repaints if they changed. */
     void refresh();
@@ -39,6 +41,7 @@ private:
     juce::Point<float> nodePosition (const BandParams&) const noexcept;
     int bandAt (juce::Point<float>) const noexcept;
     void rebuildCurves();
+    void rebuildSpectra();
     void showBandMenu (int band);
     void endDrag();
 
@@ -50,6 +53,12 @@ private:
     bool dragHasGain = false;
     juce::Point<float> dragOffset;
     juce::Path compositePath, selectedPath, selectedFill;
+
+    SpectrumAnalyzer preAnalyzer, postAnalyzer;
+    juce::Path preFill, postLine;
+    std::vector<float> spectrumPoints, spectrumSmooth;
+    juce::uint32 lastUpdateMs = 0;
+    bool spectraShown = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ResponseDisplay)
 };
