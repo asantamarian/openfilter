@@ -74,6 +74,7 @@ if(OF_BUILD_PLUGIN)
     src/plugin/PluginEditor.cpp
     src/ui/ResponseDisplay.cpp
     src/ui/SpectrumAnalyzer.cpp
+    src/ui/AdvancedPanel.cpp
     src/ui/BandDock.cpp
     src/ui/BandTable.cpp
     src/ui/MatchPanel.cpp

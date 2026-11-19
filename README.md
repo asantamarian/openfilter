@@ -23,15 +23,16 @@ Milestone M1 (static EQ, zero latency) is built and M2 (full UI) is under way. B
 | Band table with editable cells, A/B/C/D slots, View menu (interface size, display range, analyzer on/off, undo history) | Built (M2) |
 | Dynamic bands with the internal detector: threshold (manual or auto), range, ratio, knee, attack, release, trigger above or below (M3) | Built |
 | External sidechain per band, band solo (button, or hold S in the display) | Built |
-| Lookahead (2, 5 or 10 ms), detector listen (Key button), free detector filter (parameters only, no control in the dock yet) | Built |
+| Lookahead (2, 5 or 10 ms), detector listen (Key button), free detector filter | Built |
 | Linear phase (five kernel lengths) and Mixed phase (per-band choice), designed on a worker thread (M4) | Built |
 | Dynamics for bands in the linear-phase path (up to 8, adding 2048 samples of latency) | Built |
 | Auto gain: estimated from the curve, or loudness matched (K-weighted, input against output) | Built (M5) |
 | Spectral bands: a gain per frequency inside the band, with absolute and resonance modes | Built (M5) |
-| Character: Tube and Iron saturation at 4x, with drive (View menu; first voicing, not yet tuned by ear) | Built (M5) |
+| Character: Tube and Iron saturation at 4x, with drive (first voicing, not yet tuned by ear) | Built (M5) |
 | Nine factory presets; analyzer speed, tilt, range and freeze; piano strip; number keys to select bands; copy, paste and duplicate bands | Built |
 | Multi-band selection (shift-click, rubber band, Ctrl/Cmd+A) with group drag, scroll, nudge, copy and delete; paged dock; minimum window 800 x 560 | Built |
-| Spectrogram, full screen, embedded fonts, controls for drive and the free detector filter, relative editing from the dock for a multi-selection | Not yet |
+| Advanced panel: character and drive, free detector filter, knee, trigger, spectral resolution; dock edits apply to every selected band | Built |
+| Spectrogram, full screen, embedded fonts | Not yet |
 | EQ match (reference from the sidechain or an audio file) and curve sketching, on a shared curve fitter; sidechain trace in the analyzer | Built (M6) |
 | Instance hub: other instances in the same process drawn over the display, with collision strips | Built (M6) |
 | Editing another instance from this window; instances in other processes; matching to another instance | Not yet |

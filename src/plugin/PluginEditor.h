@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PluginProcessor.h"
+#include "ui/AdvancedPanel.h"
 #include "ui/BandDock.h"
 #include "ui/BandTable.h"
 #include "ui/InstancePanel.h"
@@ -22,6 +23,8 @@ public:
     ResponseDisplay& responseDisplay() noexcept { return display; }
     void updateNow() { timerCallback(); }
     void showMatchPanel (bool show) { matchPanel.setVisible (show); }
+    void showAdvancedPanel (bool show) { advancedPanel.setVisible (show); }
+    BandDock& bandDock() noexcept { return dock; }
     void showInstancePanel (bool show) { instancePanel.setVisible (show); if (show) instancePanel.showAll(); }
 
 private:
@@ -43,6 +46,7 @@ private:
     BandTable table;
     MatchPanel matchPanel;
     InstancePanel instancePanel;
+    AdvancedPanel advancedPanel;
     juce::TooltipWindow tooltips { this };
     juce::ComboBox phaseBox, qualityBox, autoBox;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> autoAttachment;

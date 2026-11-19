@@ -88,6 +88,24 @@ BandDock::BandDock (OpenFilterProcessor& p) : processor (p)
     for (auto* d : { &freqDial, &gainDial, &qDial, &thrDial, &rangeDial, &ratioDial, &atkDial, &relDial })
         d->setMidiLearn (&processor);
 
+    // A multi-selection follows the primary band.
+    const auto link = [this] (Dial& dial, const char* suffix, bool byRatio)
+    {
+        dial.onUserChange = [this, suffix, byRatio] (float before, float after) { applyToOthers (suffix, before, after, byRatio); };
+    };
+    link (freqDial, "freq", true);
+    link (qDial, "q", true);
+    link (ratioDial, "ratio", true);
+    link (atkDial, "atk", true);
+    link (relDial, "rel", true);
+    link (gainDial, "gain", false);
+    link (rangeDial, "range", false);
+    link (thrDial, "thr", false);
+    shapeBox.onChange = [this] { setOnOthers ("shape", static_cast<float> (shapeBox.getSelectedItemIndex())); };
+    slopeBox.onChange = [this] { setOnOthers ("slope", static_cast<float> (slopeBox.getSelectedItemIndex())); };
+    placeBox.onChange = [this] { setOnOthers ("place", static_cast<float> (placeBox.getSelectedItemIndex())); };
+    dynBox.onChange = [this] { setOnOthers ("dyn", static_cast<float> (dynBox.getSelectedItemIndex())); };
+
     thrDial.textOverride = [this]
     {
         auto* p = band >= 0 ? processor.bandParam (band, "thr") : nullptr;
@@ -120,6 +138,36 @@ BandDock::BandDock (OpenFilterProcessor& p) : processor (p)
     setBand (-1);
 }
 
+void BandDock::applyToOthers (const char* suffix, float before, float after, bool byRatio)
+{
+    if (! selection || band < 0 || (byRatio && std::abs (before) < 1.0e-9f))
+        return;
+    for (int other : selection())
+    {
+        if (other == band)
+            continue;
+        if (auto* p = processor.bandParam (other, suffix))
+        {
+            const auto& range = p->getNormalisableRange();
+            const float now = p->convertFrom0to1 (p->getValue());
+            processor.setBandValue (other, suffix, juce::jlimit (range.start, range.end, byRatio ? now * (after / before) : now + (after - before)));
+        }
+    }
+}
+
+void BandDock::setOnOthers (const char* suffix, float plainValue)
+{
+    // Lists fire when the dock is pointed at another band too; only a real pick counts.
+    if (rebinding || ! selection || band < 0 || plainValue < 0.0f)
+        return;
+    const auto members = selection();
+    if (members.size() < 2)
+        return;
+    for (int other : members)
+        if (other != band)
+            processor.setBandValue (other, suffix, plainValue);
+}
+
 BandDock::~BandDock()   // solo and detector listen never outlive the editor
 {
     processor.setSoloBand (-1);
@@ -131,6 +179,7 @@ void BandDock::setBand (int newBand)
     band = newBand;
     if (processor.soloBand() >= 0)   // solo follows the selection
         processor.setSoloBand (band);
+    rebinding = true;   // the lists are about to be pointed at another band: not a user pick
     shapeAttachment.reset();
     slopeAttachment.reset();
     placeAttachment.reset();
@@ -166,6 +215,7 @@ void BandDock::setBand (int newBand)
     for (auto* c : std::initializer_list<juce::Component*> { &shapeBox, &slopeBox, &placeBox, &dynBox, &autoButton, &externalButton, &soloButton, &bypassButton, &deleteButton })
         c->setEnabled (has);
 
+    rebinding = false;
     refresh();
     repaint();
 }

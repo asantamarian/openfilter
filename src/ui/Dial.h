@@ -44,6 +44,12 @@ public:
     void focusLost (FocusChangeType) override { repaint(); }
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
 
+    /** Every change the user makes through this dial goes through here. */
+    void setFromUser (float plainValue, bool partOfGesture);
+    /** Called after such a change with the plain value before and after: lets an owner
+        apply the same move to other things (a multi-selection, for instance). */
+    std::function<void (float before, float after)> onUserChange;
+
     /** Enables "Learn MIDI controller" in the right-click menu. */
     void setMidiLearn (MidiLearnTarget* target) { midiLearn = target; }
 

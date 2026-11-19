@@ -26,6 +26,16 @@ public:
         dragging, scrolling, nudging, copying and deleting then act on all of them. */
     int selectionCount() const noexcept;
     bool isSelected (int band) const noexcept { return inSelection[static_cast<size_t> (band)]; }
+    std::vector<int> selectedBands() const
+    {
+        std::vector<int> out;
+        for (int i = 0; i < kMaxBands; ++i)
+            if (inSelection[static_cast<size_t> (i)])
+                out.push_back (i);
+        return out;
+    }
+    /** For tools: add a band to the selection, as a shift-click would. */
+    void addToSelection (int band) { inSelection[static_cast<size_t> (band)] = true; repaint(); }
     std::function<void (int)> onSelectionChanged;
 
     /** Vertical range of the gain axis: 3, 6, 12 or 30 dB each way. */

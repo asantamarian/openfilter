@@ -77,10 +77,22 @@ void Dial::paint (juce::Graphics& g)
     }
 }
 
+void Dial::setFromUser (float plainValue, bool partOfGesture)
+{
+    if (attachment == nullptr || param == nullptr)
+        return;
+    const float before = param->convertFrom0to1 (param->getValue());
+    if (partOfGesture) attachment->setValueAsPartOfGesture (plainValue);
+    else               attachment->setValueAsCompleteGesture (plainValue);
+    const float after = param->convertFrom0to1 (param->getValue());
+    if (onUserChange && ! juce::exactlyEqual (before, after))
+        onUserChange (before, after);
+}
+
 void Dial::setNormalised (float value)
 {
     if (attachment != nullptr && param != nullptr)
-        attachment->setValueAsPartOfGesture (param->convertFrom0to1 (juce::jlimit (0.0f, 1.0f, value)));
+        setFromUser (param->convertFrom0to1 (juce::jlimit (0.0f, 1.0f, value)), true);
 }
 
 void Dial::showValueEditor()
@@ -121,7 +133,7 @@ void Dial::closeValueEditor (bool apply)
     {
         const auto& range = param->getNormalisableRange();
         const float plain = param->convertFrom0to1 (juce::jlimit (0.0f, 1.0f, param->getValueForText (text)));
-        attachment->setValueAsCompleteGesture (juce::jlimit (range.start, range.end, plain));
+        setFromUser (juce::jlimit (range.start, range.end, plain), false);
     }
     repaint();
 }
@@ -144,7 +156,7 @@ void Dial::showContextMenu()
         if (safe == nullptr || safe->param == nullptr || safe->attachment == nullptr)
             return;
         if (result == 1) safe->showValueEditor();
-        else if (result == 2) safe->attachment->setValueAsCompleteGesture (safe->param->convertFrom0to1 (safe->param->getDefaultValue()));
+        else if (result == 2) safe->setFromUser (safe->param->convertFrom0to1 (safe->param->getDefaultValue()), false);
         else if (result == 3)
         {
             if (safe->midiLearn->isLearning (*safe->param)) safe->midiLearn->cancelMidiLearn();
@@ -158,7 +170,7 @@ void Dial::showContextMenu()
 void Dial::nudge (float normalisedStep)
 {
     if (attachment != nullptr && param != nullptr && ! dimmed)
-        attachment->setValueAsCompleteGesture (param->convertFrom0to1 (juce::jlimit (0.0f, 1.0f, param->getValue() + normalisedStep)));
+        setFromUser (param->convertFrom0to1 (juce::jlimit (0.0f, 1.0f, param->getValue() + normalisedStep)), false);
 }
 
 bool Dial::keyPressed (const juce::KeyPress& key)
@@ -174,7 +186,7 @@ bool Dial::keyPressed (const juce::KeyPress& key)
     if (code == juce::KeyPress::returnKey)                                    { showValueEditor(); return true; }
     if (code == juce::KeyPress::homeKey || code == juce::KeyPress::deleteKey || code == juce::KeyPress::backspaceKey)
     {
-        attachment->setValueAsCompleteGesture (param->convertFrom0to1 (param->getDefaultValue()));
+        setFromUser (param->convertFrom0to1 (param->getDefaultValue()), false);
         return true;
     }
     return false;
@@ -199,13 +211,13 @@ std::unique_ptr<juce::AccessibilityHandler> Dial::createAccessibilityHandler()
             if (! isReadOnly())
             {
                 const auto& r = dial.param->getNormalisableRange();
-                dial.attachment->setValueAsCompleteGesture (juce::jlimit (r.start, r.end, static_cast<float> (v)));
+                dial.setFromUser (juce::jlimit (r.start, r.end, static_cast<float> (v)), false);
             }
         }
         void setValueAsString (const juce::String& text) override
         {
             if (! isReadOnly())
-                dial.attachment->setValueAsCompleteGesture (dial.param->convertFrom0to1 (juce::jlimit (0.0f, 1.0f, dial.param->getValueForText (text))));
+                dial.setFromUser (dial.param->convertFrom0to1 (juce::jlimit (0.0f, 1.0f, dial.param->getValueForText (text))), false);
         }
         AccessibleValueRange getRange() const override
         {
@@ -258,7 +270,7 @@ void Dial::mouseUp (const juce::MouseEvent&)
 void Dial::mouseDoubleClick (const juce::MouseEvent& e)
 {
     if (attachment != nullptr && ! dimmed && ! valueArea().contains (e.getPosition()))
-        attachment->setValueAsCompleteGesture (param->convertFrom0to1 (param->getDefaultValue()));
+        setFromUser (param->convertFrom0to1 (param->getDefaultValue()), false);
 }
 
 void Dial::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
@@ -266,6 +278,6 @@ void Dial::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDeta
     if (attachment == nullptr || dimmed || dragging)
         return;
     const float step = (e.mods.isShiftDown() ? 0.02f : 0.1f) * wheel.deltaY;
-    attachment->setValueAsCompleteGesture (param->convertFrom0to1 (juce::jlimit (0.0f, 1.0f, param->getValue() + step)));
+    setFromUser (param->convertFrom0to1 (juce::jlimit (0.0f, 1.0f, param->getValue() + step)), false);
 }
 } // namespace of

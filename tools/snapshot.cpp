@@ -203,6 +203,41 @@ int main (int argc, char** argv)
         e->updateNow();   // what the 30 Hz timer would do
     }
 
+    // Multi-selection: with bands 2 and 3 selected, turning the dock's dials for band 2 must
+    // move band 3 by the same frequency ratio and the same gain difference.
+    bool multiOk = false;
+    if (auto* e = dynamic_cast<of::OpenFilterEditor*> (editor.get()))
+    {
+        auto& display = e->responseDisplay();
+        display.selectBand (b2);
+        display.addToSelection (b3);
+        e->updateNow();
+        const auto before2 = processor.readBand (b2), before3 = processor.readBand (b3), before4 = processor.readBand (b4);
+        e->bandDock().frequencyDial().setFromUser (static_cast<float> (before2.freq * 1.5), false);
+        e->bandDock().gainDialForTests().setFromUser (static_cast<float> (before2.gainDb + 2.0), false);
+        const auto after2 = processor.readBand (b2), after3 = processor.readBand (b3), after4 = processor.readBand (b4);
+        multiOk = std::abs (after2.freq / before2.freq - 1.5) < 0.01 && std::abs (after3.freq / before3.freq - 1.5) < 0.01
+               && std::abs (after3.gainDb - before3.gainDb - 2.0) < 0.01
+               && std::abs (after4.freq - before4.freq) < 0.01 && std::abs (after4.gainDb - before4.gainDb) < 0.001;   // unselected: untouched
+        std::printf ("multi-selection edits from the dock: %s\n", multiOk ? "ok" : "WRONG");
+        // Put things back for the pictures.
+        processor.setBandValue (b2, "freq", static_cast<float> (before2.freq));
+        processor.setBandValue (b2, "gain", static_cast<float> (before2.gainDb));
+        processor.setBandValue (b3, "freq", static_cast<float> (before3.freq));
+        processor.setBandValue (b3, "gain", static_cast<float> (before3.gainDb));
+        display.selectBand (b4);
+
+        e->showAdvancedPanel (true);
+        e->updateNow();
+        const auto advancedFile = out.getSiblingFile (out.getFileNameWithoutExtension() + "-advanced.png");
+        advancedFile.deleteFile();
+        juce::FileOutputStream advancedStream (advancedFile);
+        if (advancedStream.openedOk())
+            juce::PNGImageFormat().writeImageToStream (editor->createComponentSnapshot (editor->getLocalBounds(), false, 1.0f), advancedStream);
+        e->showAdvancedPanel (false);
+        e->updateNow();
+    }
+
     // EQ match, end to end: capture this track through the analyzer path while audio runs,
     // make a reference that differs from it by a known EQ, and the match must find that EQ.
     bool matchOk = false;
@@ -392,5 +427,5 @@ int main (int argc, char** argv)
     }
     std::printf ("wrote %s (%d x %d)\n", smallFile.getFullPathName().toRawUTF8(), editor->getWidth(), editor->getHeight());
 
-    return written && tableWritten && roundTrip && presetOk && parseOk && slotsOk && factoryOk && matchOk && hubOk && midiOk ? 0 : 1;
+    return written && tableWritten && roundTrip && presetOk && parseOk && slotsOk && factoryOk && matchOk && hubOk && midiOk && multiOk ? 0 : 1;
 }
