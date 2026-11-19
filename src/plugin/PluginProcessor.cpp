@@ -25,8 +25,9 @@ OpenFilterProcessor::OpenFilterProcessor()
                                               raw (id ("knee")), raw (id ("atk")), raw (id ("rel")), raw (id ("trig")), raw (id ("sc")), raw (id ("lin")),
                                               raw (id ("smode")), raw (id ("sres")),
                                               raw (id ("scfree")), raw (id ("scfreq")), raw (id ("scq")) };
-        // Whether any band is spectral decides the latency, so these are watched too.
-        for (const char* suffix : { "dyn", "used", "shape" })
+        // Whether any band is spectral, or dynamic in the linear-phase path, decides the
+        // latency, so these are watched too.
+        for (const char* suffix : { "dyn", "used", "shape", "lin" })
             apvts.addParameterListener (id (suffix), this);
     }
     gainScalePtr = raw ("gain_scale");
@@ -134,7 +135,7 @@ OpenFilterProcessor::~OpenFilterProcessor()
     apvts.removeParameterListener ("lookahead", this);
     apvts.removeParameterListener ("character", this);
     for (int b = 0; b < kMaxBands; ++b)
-        for (const char* suffix : { "dyn", "used", "shape" })
+        for (const char* suffix : { "dyn", "used", "shape", "lin" })
             apvts.removeParameterListener (params::bandId (b, suffix), this);
     cancelPendingUpdate();
 }
@@ -145,7 +146,7 @@ void OpenFilterProcessor::updateLatency()
     const double rate = getSampleRate() > 0.0 ? getSampleRate() : 48000.0;
     ParamSnapshot snapshot;
     readSnapshot (snapshot);
-    setLatencySamples (Engine::latencyFor (mode, rate, juce::roundToInt (linQualityPtr->load()), snapshot.wantsSpectral(), snapshot.lookahead, snapshot.character));
+    setLatencySamples (Engine::latencyFor (mode, rate, juce::roundToInt (linQualityPtr->load()), snapshot.wantsSpectral(), snapshot.lookahead, snapshot.character, snapshot.wantsLinearDynamics()));
 }
 
 //==============================================================================

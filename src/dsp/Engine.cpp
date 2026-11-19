@@ -166,6 +166,20 @@ void BandProcessor::update (const BandParams& target, bool mono) noexcept
     lastMono = mono;
 }
 
+double BandProcessor::detectOnly (const BandParams& target) noexcept
+{
+    if (! detecting)
+        detector.reset();
+    detecting = true;
+    last.place = target.place;
+    last.dyn = target.dyn;
+    if (target.dyn.freeFilter)
+        detector.setFilter (Shape::Bell, target.dyn.freeFreq, target.dyn.freeQ);
+    else
+        detector.setFilter (target.shape, target.freq, target.q);
+    return detector.update (target.dyn, target.dyn.rangeDb);
+}
+
 void BandProcessor::processLaneA (double* left, double* right, int n) noexcept
 {
     filters[0].process (left, n);
@@ -275,13 +289,14 @@ int Engine::lookaheadSamples (int setting, double sampleRate) noexcept
     return static_cast<int> (std::lround (ms[std::clamp (setting, 0, 3)] * 0.001 * sampleRate));
 }
 
-int Engine::latencyFor (int phaseMode, double sampleRate, int linQuality, bool withSpectral, int lookaheadSetting, int characterMode) noexcept
+int Engine::latencyFor (int phaseMode, double sampleRate, int linQuality, bool withSpectral, int lookaheadSetting, int characterMode,
+                        bool linearDynamics) noexcept
 {
     // The character stage oversamples exactly like Natural mode, with the same round trip.
     const int charDelay = characterMode == 0 ? 0 : sampleRate < 70000.0 ? kSteepHalf + (kWideHalf + 1) / 2 : sampleRate < 140000.0 ? kWideHalf : 0;
     const int extra = (withSpectral ? SpectralLane::frameFor (sampleRate) : 0) + lookaheadSamples (lookaheadSetting, sampleRate) + charDelay;
     if (phaseMode == 2 || phaseMode == 3)
-        return FirLane::latencyFor (linQuality, sampleRate) + extra;
+        return FirLane::latencyFor (linQuality, sampleRate, linearDynamics) + extra;
     switch (oversamplingFor (phaseMode, sampleRate))
     {
         case 4:  return kSteepHalf + (kWideHalf + 1) / 2 + extra;   // 69 + 7
@@ -341,7 +356,7 @@ void Engine::prepare (double sampleRate, int maxBlock, int)
     kWet.prepare (sampleRate);
     loudCoef = 1.0 - std::exp (-1.0 / (1.5 * sampleRate));   // about a 3 s window
     int delaySize = 256;
-    while (delaySize < FirLane::latencyFor (4, sampleRate) + SpectralLane::frameFor (sampleRate) + lookaheadSamples (3, sampleRate) + 16)
+    while (delaySize < FirLane::latencyFor (4, sampleRate, true) + SpectralLane::frameFor (sampleRate) + lookaheadSamples (3, sampleRate) + 16)
         delaySize <<= 1;
     delayMask = delaySize - 1;
     for (auto& ch : stages)
@@ -350,15 +365,16 @@ void Engine::prepare (double sampleRate, int maxBlock, int)
     doneSerial.store (mailSerial.load());
     for (auto& b : lookBuf)
         b.assign (static_cast<size_t> (lookaheadSamples (3, sampleRate) + 1), 0.0);
-    configure (phaseMode, linQuality, spectralOn, lookahead, character);
+    configure (phaseMode, linQuality, spectralOn, lookahead, character, firDynamics);
     reset();
 
     workerRunning.store (true);
     worker = std::thread ([this] { workerLoop(); });
 }
 
-void Engine::configure (int mode, int quality, bool withSpectral, int lookaheadSetting, int characterMode) noexcept
+void Engine::configure (int mode, int quality, bool withSpectral, int lookaheadSetting, int characterMode, bool linearDynamics) noexcept
 {
+    firDynamics = linearDynamics && (mode == 2 || mode == 3);
     character = characterMode;
     charFactor = characterMode == 0 ? 1 : fs < 70000.0 ? 4 : fs < 140000.0 ? 2 : 1;
     for (auto& ch : charStages)
@@ -378,7 +394,7 @@ void Engine::configure (int mode, int quality, bool withSpectral, int lookaheadS
     spectral.reset();
     firMode = mode == 2 || mode == 3;
     factor = oversamplingFor (mode, fs);
-    latency.store (latencyFor (mode, fs, quality, withSpectral, lookaheadSetting, characterMode), std::memory_order_relaxed);
+    latency.store (latencyFor (mode, fs, quality, withSpectral, lookaheadSetting, characterMode, firDynamics), std::memory_order_relaxed);
     for (auto& ch : stages)
     {
         ch.first.design (factor == 4 ? kSteepHalf : kWideHalf);
@@ -389,7 +405,7 @@ void Engine::configure (int mode, int quality, bool withSpectral, int lookaheadS
     delayPos = 0;
     if (firMode)
     {
-        fir.reset (quality);   // starts as a pure delay until the worker delivers a kernel
+        fir.reset (quality, firDynamics);   // starts as a pure delay until the worker delivers a kernel
         lastRequest = {};
         firRepost = true;
     }
@@ -410,8 +426,14 @@ void Engine::postFirRequest (const ParamSnapshot& params) noexcept
         BandParams p = band;
         if (hasGain (p.shape))
             p.gainDb = std::clamp (p.gainDb * params.gainScale, -60.0, 60.0);
-        p.dyn = {};   // dynamics do not run in the linear-phase path
-        if (p.audible() && (phaseMode == 2 || p.linear))
+        // Of the dynamics settings only "dynamic, with this range" shapes the kernels; the
+        // rest (threshold, timing) must not trigger a redesign.
+        DynParams shape;
+        shape.on = p.dynamic();
+        shape.rangeDb = shape.on ? std::clamp (p.dyn.rangeDb * params.gainScale, -60.0, 60.0) : 0.0;
+        const bool member = p.audible() && (phaseMode == 2 || p.linear);
+        p.dyn = shape;
+        if (member)
             req.bands[static_cast<size_t> (req.count++)] = p;
     }
     if (req == lastRequest && ! firRepost)
@@ -444,7 +466,7 @@ void Engine::reset() noexcept
     spectral.reset();
     if (firMode)
     {
-        fir.reset (linQuality);
+        fir.reset (linQuality, firDynamics);
         lastRequest = {};
         firRepost = true;
     }
@@ -481,13 +503,13 @@ void Engine::updateTargets (const ParamSnapshot& params, bool mono) noexcept
     const int wantCharacter = std::clamp (params.character, 0, 2);
     driveTarget = std::clamp (params.drive, 0.0, 1.0);
     if (params.phaseMode != phaseMode || (firMode && quality != linQuality) || wantSpectral != spectralOn || wantLookahead != lookahead
-        || wantCharacter != character)
+        || wantCharacter != character || params.wantsLinearDynamics() != firDynamics)
     {
         // A different phase mode, kernel length, lookahead, or the first or last spectral band
         // changes latency. None of these is automatable, so a short fade-in after the switch
         // is enough.
         const bool wasFresh = fresh;
-        configure (params.phaseMode, quality, wantSpectral, wantLookahead, wantCharacter);
+        configure (params.phaseMode, quality, wantSpectral, wantLookahead, wantCharacter, params.wantsLinearDynamics());
         modeFade = wasFresh ? 1.0 : 0.0;
     }
     if (spectralOn)
@@ -509,6 +531,8 @@ void Engine::updateTargets (const ParamSnapshot& params, bool mono) noexcept
     if (firMode)
         postFirRequest (params);
 
+    double firAmounts[FirLane::kMaxDynamic] {};
+    int firAmountCount = 0;
     for (int i = 0; i < kMaxBands; ++i)
     {
         BandParams p = params.bands[static_cast<size_t> (i)];
@@ -517,12 +541,31 @@ void Engine::updateTargets (const ParamSnapshot& params, bool mono) noexcept
             p.gainDb = std::clamp (p.gainDb * params.gainScale, -60.0, 60.0);
             p.dyn.rangeDb = std::clamp (p.dyn.rangeDb * params.gainScale, -60.0, 60.0);
         }
-        // A band realised in the linear-phase path is silent in the minimum-phase one.
-        if (firMode && (phaseMode == 2 || p.linear))
+        // A band realised in the linear-phase path is silent in the minimum-phase one; if it
+        // is dynamic, its detector still runs and tells the lane how far into its range it is.
+        const bool inFirLane = firMode && (phaseMode == 2 || p.linear);
+        const BandParams asSet = p;
+        if (inFirLane)
             p.used = false;
-        bands[static_cast<size_t> (i)].update (p, mono);
-        dynGains[static_cast<size_t> (i)].store (static_cast<float> (bands[static_cast<size_t> (i)].dynamicGainDb()), std::memory_order_relaxed);
+        auto& band = bands[static_cast<size_t> (i)];
+        band.update (p, mono);
+        if (inFirLane)
+        {
+            if (firDynamics && asSet.dynamic() && firAmountCount < FirLane::kMaxDynamic)
+            {
+                const double dyn = band.detectOnly (asSet);
+                const double range = asSet.dyn.rangeDb;
+                // The lane mixes linearly between the static and the full-range response.
+                firAmounts[firAmountCount++] = (std::pow (10.0, dyn / 20.0) - 1.0) / (std::pow (10.0, range / 20.0) - 1.0);
+            }
+            else
+                band.stopDetectOnly();
+        }
+        dynGains[static_cast<size_t> (i)].store (static_cast<float> (band.dynamicGainDb()), std::memory_order_relaxed);
     }
+
+    if (firMode)
+        fir.setDynamicAmounts (firAmounts, firAmountCount);
 
     // Auto gain.
     if (params.autoGain != autoMode)

@@ -110,6 +110,19 @@ struct ParamSnapshot
     double drive = 0.3;      // 0..1, how hard the character stage is pushed
     bool detectorListen = false;   // solo plays the band's detector signal instead of its region
 
+    /** True when a band set to Dynamic will run in the linear-phase path: that path then gets
+        its second stage and the latency that goes with it. (Range and bypass are ignored, so
+        moving them does not change the latency.) */
+    bool wantsLinearDynamics() const noexcept
+    {
+        if (phaseMode != 2 && phaseMode != 3)
+            return false;
+        for (const auto& b : bands)
+            if (b.used && b.dyn.on && ! b.dyn.spectral && canBeDynamic (b.shape) && (phaseMode == 2 || b.linear))
+                return true;
+        return false;
+    }
+
     /** True when any band slot is set to Spectral: the spectral stage and its latency are in. */
     bool wantsSpectral() const noexcept
     {

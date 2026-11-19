@@ -41,9 +41,24 @@ void FirLane::prepare (double sampleRate)
     blockFft.prepare (2 * partition);
     designFft.prepare (2 * maxTaps);
 
+    dynTaps = dynamicTapsFor (sampleRate);
+    dynParts = dynTaps / partition;
     for (auto& slot : slots)
+    {
         for (auto& s : slot.spectra)
             s.assign (static_cast<size_t> (maxPartitions) * static_cast<size_t> (bins), Complex {});
+        for (auto& d : slot.dynSpectra)
+            d.assign (static_cast<size_t> (dynParts) * static_cast<size_t> (bins), Complex {});
+        slot.dynCount = 0;
+    }
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        prevStatic[ch].assign (static_cast<size_t> (partition), 0.0);
+        staticDelay[ch].assign (static_cast<size_t> (dynTaps / 2 + partition), 0.0);
+        history2[ch].assign (static_cast<size_t> (dynParts) * static_cast<size_t> (bins), Complex {});
+    }
+    for (auto* v : { &accC, &accD, &convL, &convR })
+        v->assign (static_cast<size_t> (2 * partition), Complex {});
     for (int ch = 0; ch < 2; ++ch)
     {
         inBlock[ch].assign (static_cast<size_t> (partition), 0.0);
@@ -60,11 +75,22 @@ void FirLane::prepare (double sampleRate)
     reset (1);
 }
 
-void FirLane::reset (int quality) noexcept
+void FirLane::reset (int quality, bool withDynamics) noexcept
 {
     taps = tapsFor (quality, fs);
     partitions = taps / partition;
     unity = true;   // a design for this quality replaces it when the worker delivers one
+    dynStage = withDynamics;
+    head2 = delayPos = 0;
+    amountCount = 0;
+    for (int j = 0; j < kMaxDynamic; ++j)
+        amountNow[j] = amountPrev[j] = amountTarget[j] = 0.0;
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        std::fill (prevStatic[ch].begin(), prevStatic[ch].end(), 0.0);
+        std::fill (staticDelay[ch].begin(), staticDelay[ch].end(), 0.0);
+        std::fill (history2[ch].begin(), history2[ch].end(), Complex {});
+    }
 
     for (int ch = 0; ch < 2; ++ch)
     {
@@ -93,6 +119,110 @@ void FirLane::process (double* left, double* right, int n) noexcept
             processBlock();
         }
     }
+}
+
+void FirLane::setDynamicAmounts (const double* amounts, int count) noexcept
+{
+    amountCount = std::min (count, static_cast<int> (kMaxDynamic));
+    for (int j = 0; j < amountCount; ++j)
+        amountTarget[j] = std::clamp (amounts[j], 0.0, 1.0);
+}
+
+void FirLane::processDynamics (const Slot* slot) noexcept
+{
+    // The block just produced by the first stage is in outBlock. Its spectrum joins a short
+    // delay line; the block itself is delayed by half a dynamic kernel to meet the result.
+    head2 = (head2 + 1) % dynParts;
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        for (int i = 0; i < partition; ++i)
+        {
+            frame[static_cast<size_t> (i)] = prevStatic[ch][static_cast<size_t> (i)];
+            frame[static_cast<size_t> (partition + i)] = outBlock[ch][static_cast<size_t> (i)];
+        }
+        blockFft.transform (frame.data(), 2 * partition, false);
+        std::copy_n (frame.begin(), bins, history2[ch].begin() + static_cast<std::ptrdiff_t> (head2) * bins);
+        std::copy (outBlock[ch].begin(), outBlock[ch].end(), prevStatic[ch].begin());
+    }
+
+    // Amounts move once per block; the block is rendered with the old and the new amounts
+    // and crossfaded, so the gain glides instead of stepping.
+    const int count = slot != nullptr ? slot->dynCount : 0;
+    const bool usable = count > 0 && count == amountCount;
+    bool anything = false;
+    for (int j = 0; j < kMaxDynamic; ++j)
+    {
+        amountPrev[j] = amountNow[j];
+        amountNow[j] = usable && j < count ? amountTarget[j] : 0.0;
+        anything = anything || amountPrev[j] != 0.0 || amountNow[j] != 0.0;
+    }
+
+    const int delay = dynTaps / 2, ringSize = static_cast<int> (staticDelay[0].size());
+    if (anything && slot != nullptr)
+    {
+        // accC, accD: the change to left and right with the old amounts (first half of each
+        // array's use) is kept separate from the new by doing two passes.
+        for (int pass = 0; pass < 2; ++pass)
+        {
+            auto& left = pass == 0 ? accC : convL;    // reuse: accC/accD = old, convL/convR = new
+            auto& right = pass == 0 ? accD : convR;
+            std::fill (left.begin(), left.begin() + bins, Complex {});
+            std::fill (right.begin(), right.begin() + bins, Complex {});
+            for (int j = 0; j < count; ++j)
+            {
+                const double amount = pass == 0 ? amountPrev[j] : amountNow[j];
+                if (amount == 0.0)
+                    continue;
+                const auto place = slot->dynPlace[j];
+                const Complex* kernel = slot->dynSpectra[j].data();
+                for (int k = 0; k < dynParts; ++k)
+                {
+                    const auto age = static_cast<size_t> ((head2 - k + dynParts) % dynParts) * static_cast<size_t> (bins);
+                    const Complex* xl = history2[0].data() + age;
+                    const Complex* xr = history2[1].data() + age;
+                    const Complex* h = kernel + static_cast<size_t> (k) * static_cast<size_t> (bins);
+                    for (int b = 0; b < bins; ++b)
+                    {
+                        const auto i = static_cast<size_t> (b);
+                        const Complex hl = h[b] * xl[b] * amount, hr = h[b] * xr[b] * amount;
+                        switch (place)
+                        {
+                            case Placement::Stereo: left[i] += hl;  right[i] += hr;  break;
+                            case Placement::Left:   left[i] += hl;  break;
+                            case Placement::Right:  right[i] += hr; break;
+                            case Placement::Mid:    { const Complex m = 0.5 * (hl + hr); left[i] += m;  right[i] += m; break; }
+                            case Placement::Side:   { const Complex d = 0.5 * (hl - hr); left[i] += d;  right[i] -= d; break; }
+                        }
+                    }
+                }
+            }
+            for (auto* acc : { &left, &right })
+            {
+                for (int b = 1; b < partition; ++b)
+                    (*acc)[static_cast<size_t> (2 * partition - b)] = std::conj ((*acc)[static_cast<size_t> (b)]);
+                blockFft.transform (acc->data(), 2 * partition, true);
+            }
+        }
+    }
+
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        const auto& oldChange = ch == 0 ? accC : accD;
+        const auto& newChange = ch == 0 ? convL : convR;
+        for (int i = 0; i < partition; ++i)
+        {
+            const int w = (delayPos + i) % ringSize, r = (delayPos + i - delay + ringSize) % ringSize;
+            staticDelay[ch][static_cast<size_t> (w)] = outBlock[ch][static_cast<size_t> (i)];
+            double y = staticDelay[ch][static_cast<size_t> (r)];
+            if (anything)
+            {
+                const double t = static_cast<double> (i + 1) / partition;
+                y += oldChange[static_cast<size_t> (partition + i)].real() * (1.0 - t) + newChange[static_cast<size_t> (partition + i)].real() * t;
+            }
+            outBlock[ch][static_cast<size_t> (i)] = y;
+        }
+    }
+    delayPos = (delayPos + partition) % ringSize;
 }
 
 void FirLane::accumulate (const Slot* slot, int out, Complex* acc) const noexcept
@@ -182,6 +312,9 @@ void FirLane::processBlock() noexcept
                 outBlock[out][static_cast<size_t> (i)] = accA[static_cast<size_t> (partition + i)].real();
     }
 
+    if (dynStage)   // with the kernel that is in effect from this block on
+        processDynamics (next >= 0 ? &slots[next] : &slots[cur]);
+
     if (next >= 0)
     {
         unity = slots[next].unity;
@@ -206,6 +339,7 @@ bool FirLane::design (const BandParams* bands, int count, int quality) noexcept
     slot.taps = n;
     count = std::min (count, kMaxBands);
     slot.unity = count <= 0;
+    slot.dynCount = 0;
     if (slot.unity)
     {
         pending.store (target, std::memory_order_release);
@@ -288,6 +422,46 @@ bool FirLane::design (const BandParams* bands, int count, int quality) noexcept
             blockFft.transform (work, 2 * partition, false);
             std::copy_n (work, bins, spectra.data() + static_cast<size_t> (p) * static_cast<size_t> (bins));
         }
+    }
+
+    // Dynamic bands: a short kernel each, K = H(G0 + range) / H(G0) - 1 (zero phase, real).
+    const int dn = dynTaps, dGrid = 2 * dn;
+    for (int i = 0; i < count && slot.dynCount < kMaxDynamic; ++i)
+    {
+        if (! (bands[i].dyn.on && std::abs (bands[i].dyn.rangeDb) > 1.0e-6))
+            continue;
+        BandParams moved = bands[i];
+        moved.gainDb = bands[i].gainDb + bands[i].dyn.rangeDb;
+        const auto full = makePrototype (moved);
+        for (int k = 0; k <= dGrid / 2; ++k)
+        {
+            const double f = fs * k / dGrid;
+            const double value = std::pow (10.0, std::clamp (full.magnitudeDb (f) - protos[i].magnitudeDb (f), -80.0, 80.0) / 20.0) - 1.0;
+            grid[static_cast<size_t> (k)] = value;
+            if (k > 0 && k < dGrid / 2)
+                grid[static_cast<size_t> (dGrid - k)] = value;
+        }
+        designFft.transform (grid.data(), dGrid, true);
+
+        auto& spectra = slot.dynSpectra[slot.dynCount];
+        Complex* work = grid.data() + dGrid / 2 - partition;
+        const double i0 = bessel0 (9.0);
+        for (int p = 0; p < dynParts; ++p)
+        {
+            for (int j = 0; j < 2 * partition; ++j)
+                work[j] = Complex {};
+            for (int j = 0; j < partition; ++j)
+            {
+                const int tap = p * partition + j;
+                const int src = ((tap - dn / 2) % dGrid + dGrid) % dGrid;
+                const double x = (tap - 0.5 * dn) / (0.5 * dn);
+                work[j] = grid[static_cast<size_t> (src)].real() * (bessel0 (9.0 * std::sqrt (std::max (0.0, 1.0 - x * x))) / i0);
+            }
+            blockFft.transform (work, 2 * partition, false);
+            std::copy_n (work, bins, spectra.data() + static_cast<size_t> (p) * static_cast<size_t> (bins));
+        }
+        slot.dynPlace[slot.dynCount] = bands[i].place;
+        ++slot.dynCount;
     }
 
     pending.store (target, std::memory_order_release);

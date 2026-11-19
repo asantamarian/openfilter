@@ -75,7 +75,7 @@ OpenFilterEditor::OpenFilterEditor (OpenFilterProcessor& p)
     phaseBox.addItemList ({ "Zero latency", "Natural", "Linear", "Mixed" }, 1);
     phaseBox.setTitle ("Phase mode");
     phaseBox.setTooltip ("Zero latency: no delay, less exact in the top octave. Natural: follows the ideal curve up to 20 kHz, with a short delay and more CPU. "
-                         "Linear: no phase shift at all, with a long delay; dynamics do not run. Mixed: each band chooses, with the Lin button in the dock.");
+                         "Linear: no phase shift at all, with a long delay. Mixed: each band chooses, with the Lin button in the dock.");
     qualityBox.addItemList ({ "Low", "Medium", "High", "Very high", "Max" }, 1);
     qualityBox.setTitle ("Linear phase quality");
     qualityBox.setTooltip ("Length of the linear-phase filter. Longer is more exact at low frequencies and for narrow bands, and adds delay.");

@@ -59,7 +59,7 @@ BandDock::BandDock (OpenFilterProcessor& p) : processor (p)
 
     linearButton.setClickingTogglesState (true);
     linearButton.setTitle ("Linear phase for this band");
-    linearButton.setTooltip ("In Mixed phase mode: realise this band with linear phase. Its dynamics do not run while it is linear.");
+    linearButton.setTooltip ("In Mixed phase mode: realise this band with linear phase. A dynamic band still works when linear; it adds 2048 samples of delay and its gain moves in steps of about 10 ms.");
     addChildComponent (linearButton);
 
     pageButton.setTitle ("Switch between the filter and dynamics controls");

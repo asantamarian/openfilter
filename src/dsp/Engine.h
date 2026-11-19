@@ -33,6 +33,11 @@ public:
     double dynamicGainDb() const noexcept { return detecting ? detector.current() : 0.0; }
     void prepareDetector (double hostRate, int hostControlBlock) noexcept { detector.prepare (hostRate, hostControlBlock); }
 
+    /** For a band that lives in the linear-phase lane: run only its detector and return the
+        dynamic gain in dB. The band's own filters stay out of it. */
+    double detectOnly (const BandParams& target) noexcept;
+    void stopDetectOnly() noexcept { if (! wasAudible) detecting = false; }
+
     void processLaneA (double* left, double* right, int n) noexcept;
     void processLaneB (double* mid, double* side, int n) noexcept;
 
@@ -83,7 +88,8 @@ public:
     /** Latency a mode will have at a sample rate: lets the plugin tell the host from the
         message thread. Phase modes: 0 zero latency, 1 natural, 2 linear, 3 mixed. linQuality
         (0..4) only matters for linear and mixed. */
-    static int latencyFor (int phaseMode, double sampleRate, int linQuality = 1, bool spectral = false, int lookahead = 0, int character = 0) noexcept;
+    static int latencyFor (int phaseMode, double sampleRate, int linQuality = 1, bool spectral = false, int lookahead = 0, int character = 0,
+                           bool linearDynamics = false) noexcept;
     static int lookaheadSamples (int lookahead, double sampleRate) noexcept;
 
     /** For tests: true once the linear-phase kernel matches the bands last sent to it. */
@@ -127,7 +133,7 @@ private:
     ParamSnapshot autoSeen {};
     bool autoSeenValid = false;
     std::atomic<float> autoGainShown { 0.0f };
-    void configure (int mode, int quality, bool withSpectral, int lookaheadSetting, int characterMode) noexcept;
+    void configure (int mode, int quality, bool withSpectral, int lookaheadSetting, int characterMode, bool linearDynamics) noexcept;
     void processCharacter (double* left, double* right, int n) noexcept;
     void postFirRequest (const ParamSnapshot& params) noexcept;
     void workerLoop();
@@ -176,7 +182,7 @@ private:
     std::vector<double> lookBuf[2];
     bool soloFromSidechain = false;
     FirLane fir;
-    bool firMode = false, firRepost = false;
+    bool firMode = false, firRepost = false, firDynamics = false;
     FirRequest lastRequest {}, mail {};
     std::atomic_flag mailLock = ATOMIC_FLAG_INIT;
     std::atomic<unsigned> mailSerial { 0 }, doneSerial { 0 };

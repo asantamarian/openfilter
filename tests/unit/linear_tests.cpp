@@ -271,3 +271,85 @@ TEST_CASE ("linear: edits while running crossfade without blowing up; engines st
     }
     SUCCEED();
 }
+
+TEST_CASE ("linear: dynamic bands work in the linear-phase path", "[linear]")
+{
+    // A dynamic bell in Linear mode, and the same band flagged linear in Mixed mode.
+    for (int mode : { 2, 3 })
+    {
+        ParamSnapshot p;
+        p.phaseMode = mode;
+        p.linQuality = 0;
+        p.bands[0] = band (Shape::Bell, 1000.0, 2.0, 2.0);
+        p.bands[0].linear = true;
+        p.bands[0].dyn.on = true;
+        p.bands[0].dyn.rangeDb = -9.0;
+        p.bands[0].dyn.autoThreshold = false;
+        p.bands[0].dyn.thresholdDb = -30.0;
+        p.bands[0].dyn.ratio = 100.0;
+        p.bands[0].dyn.kneeDb = 0.0;
+        p.bands[0].dyn.attackMs = 5.0;
+        p.bands[0].dyn.releaseMs = 100.0;
+
+        // The second stage adds half a 4096-tap kernel to the latency.
+        Engine e;
+        e.prepare (48000.0, 512, 2);
+        REQUIRE (settle (e, p));
+        CHECK (e.latencySamples() == 2048 + 512 + 2048);
+        CHECK (e.latencySamples() == Engine::latencyFor (mode, 48000.0, 0, false, 0, 0, true));
+        CHECK (p.wantsLinearDynamics());
+
+        // Loud at the band: static +2 dB plus the full -9 dB of range.
+        Engine loud;
+        loud.prepare (48000.0, 512, 2);
+        REQUIRE (settle (loud, p));
+        const double loudGain = sineGainDb (loud, p, 48000.0, 1000.0);   // 0.25 peak: about -15 dBFS RMS, well over -30
+        INFO ("mode " << mode << ": loud tone gain " << loudGain << " dB, dynamic gain " << loud.dynamicGainDb (0));
+        CHECK_THAT (loudGain, WithinAbs (2.0 - 9.0, 0.3));
+        CHECK_THAT (static_cast<double> (loud.dynamicGainDb (0)), WithinAbs (-9.0, 0.05));
+        // Away from the band nothing changes, even while it is fully engaged.
+        Engine away;
+        away.prepare (48000.0, 512, 2);
+        REQUIRE (settle (away, p));
+
+        // Quiet at the band: only the static +2 dB.
+        auto quietParams = p;
+        quietParams.bands[0].dyn.thresholdDb = 0.0;   // never reached
+        Engine quiet;
+        quiet.prepare (48000.0, 512, 2);
+        REQUIRE (settle (quiet, quietParams));
+        CHECK_THAT (sineGainDb (quiet, quietParams, 48000.0, 1000.0), WithinAbs (2.0, 0.1));
+        CHECK (quiet.dynamicGainDb (0) == 0.0f);
+    }
+
+    // Half-way into the range the result is close to the true half-way curve, not just at
+    // the ends: ratio 2 on a tone 9 dB over the threshold gives 4.5 of the 9 dB.
+    ParamSnapshot p;
+    p.phaseMode = 2;
+    p.linQuality = 0;
+    p.bands[0] = band (Shape::Bell, 1000.0, 0.0, 2.0);
+    p.bands[0].dyn.on = true;
+    p.bands[0].dyn.rangeDb = -9.0;
+    p.bands[0].dyn.autoThreshold = false;
+    p.bands[0].dyn.thresholdDb = -24.0;   // the test tone reads -15 dB: 9 dB over
+    p.bands[0].dyn.ratio = 2.0;
+    p.bands[0].dyn.kneeDb = 0.0;
+    Engine e;
+    e.prepare (48000.0, 512, 2);
+    REQUIRE (settle (e, p));
+    const double gain = sineGainDb (e, p, 48000.0, 1000.0);
+    INFO ("half-way gain " << gain << " dB, dynamic gain " << e.dynamicGainDb (0));
+    CHECK_THAT (static_cast<double> (e.dynamicGainDb (0)), WithinAbs (-4.5, 0.2));
+    CHECK_THAT (gain, WithinAbs (-4.5, 0.3));
+
+    // Without any dynamic band in the lane there is no second stage and no extra latency.
+    ParamSnapshot plain;
+    plain.phaseMode = 2;
+    plain.linQuality = 0;
+    plain.bands[0] = band (Shape::Bell, 1000.0, 3.0, 2.0);
+    CHECK_FALSE (plain.wantsLinearDynamics());
+    Engine s;
+    s.prepare (48000.0, 512, 2);
+    REQUIRE (settle (s, plain));
+    CHECK (s.latencySamples() == 2048 + 512);
+}

@@ -264,16 +264,38 @@ for bit.
 **Mixed mode**: bands with `lin` on go to the linear-phase lane, the others run in
 the minimum-phase lanes ahead of it. Latency is that of the lane.
 
-**Not built yet:** dynamics for bands in the linear-phase lane (planned: a
-4096-tap difference kernel per dynamic band, `K = H(G0+R)/H(G0) - 1`, mixed in by
-the detector; research item R-5). Until then a band's dynamics do not run while it
-is linear; in Mixed mode, leave dynamic bands unflagged. All Pass bands have no
-effect in the lane.
+**Dynamic bands in the lane.** A band set to Dynamic keeps working when it is
+realised with linear phase. The lane gets a second, short stage:
+
+- For each dynamic band (at most 8; further ones stay static) the worker designs a
+  4096-tap linear-phase kernel `K = H(G0 + R) / H(G0) - 1` (zero phase, real), where
+  `G0` is the static gain and `R` the range.
+- The first stage's output `s` is transformed again into a short delay line, and
+  the result is `y = delay(s, 2048) + sum_i amount_i * (K_i * s)`, applied to the
+  band's placement (left, right, both, mid or side). Because the second stage runs
+  on each block as soon as the first has produced it, it adds only the kernel's
+  centre, **2048 samples**, and no second block of buffering.
+- `amount_i = (10^(dyn_i/20) - 1) / (10^(R/20) - 1)` comes from the band's own
+  detector, which keeps running at control rate although the band's minimum-phase
+  filters are out of the path. Amounts are applied once per 512-sample block, with
+  the block rendered at the old and the new amounts and crossfaded, so the gain
+  glides. Attack and release shorter than a block (about 10 ms) are therefore
+  smoothed to that.
+- The stage exists whenever a used band set to Dynamic will run in the lane (its
+  range and bypass are ignored, so moving them does not change the latency).
+
+The mix between the static and the full-range response is linear in amplitude:
+exact at both ends, and within 0.3 dB of the true curve half-way in the tests.
+Two known approximations (research item R-5): overlapping dynamic bands add their
+changes rather than multiplying them, and a left- or right-placed dynamic band is
+applied after the mid/side bands rather than before. All Pass bands have no effect
+in the lane.
 
 Verified by `tests/unit/linear_tests.cpp`: exact latency, mirror-symmetric impulse
 response, response within 0.1 dB of the prototype from 60 Hz to 19 kHz at Medium,
 channel separation for left and side bands, and Mixed with no flagged band equal
-to Zero Latency plus the delay.
+to Zero Latency plus the delay, and dynamic bands in Linear and Mixed (full range,
+no action, and half-way).
 
 ## 7. Dynamic bands
 

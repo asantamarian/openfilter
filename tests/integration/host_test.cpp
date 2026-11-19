@@ -204,6 +204,21 @@ void testPlugin (juce::AudioPluginFormatManager& formats, const juce::String& pa
         check (plugin->getLatencySamples() == 4608, "Linear mode, Medium, at 48 kHz reports 4608 samples of latency");
         check (std::abs (juce::Decibels::gainToDecibels (out / in) - 12.0) < 0.1, "bell gain in Linear mode");
 
+        // A dynamic band in Linear mode brings in the second stage: 2048 more samples.
+        if (auto* dyn = findParam (*plugin, "Band 1 Dynamics Mode"))
+        {
+            dyn->setValueNotifyingHost (dyn->getValueForText ("Dynamic"));
+            for (int block = 0; block < 8; ++block)
+            {
+                buffer.clear();
+                plugin->processBlock (buffer, midi);
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
+            }
+            std::printf ("    Linear mode with a dynamic band: %d samples of latency\n", plugin->getLatencySamples());
+            check (plugin->getLatencySamples() == 4608 + 2048, "a dynamic band in Linear mode adds 2048 samples");
+            dyn->setValueNotifyingHost (0.0f);
+        }
+
         phase->setValueNotifyingHost (0.0f);
         for (int block = 0; block < 6; ++block)   // LV2 reports latency only while running
         {

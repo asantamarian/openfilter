@@ -107,7 +107,7 @@ multiply by 2 at 88.2/96 and by 4 at 176.4/192.
 | Zero latency IIR | 0 |
 | Natural (oversampled IIR) | 76 at 44.1/48 kHz (4x); 13 at 88.2/96 kHz (2x); 0 above. These are absolute, not scaled |
 | Linear or Mixed, quality Low / Medium / High / Very high / Max | 2048 / 4096 / 8192 / 16384 / 32768, plus one 512-sample convolution partition |
-| Dynamic band in the FIR lane (any number) | +2048 |
+| Dynamic band in the linear-phase lane (any number) | +2048, present whenever a used band set to Dynamic runs in the lane |
 | Spectral stage (any number of spectral bands) | +2048, present whenever a used band is set to Spectral |
 | Dynamics lookahead | 0, 2, 5 or 10 ms as selected |
 | Character stage oversampling | Measured, about 16 when Tube or Iron is active |
