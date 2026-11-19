@@ -28,7 +28,8 @@ Milestone M1 (static EQ, zero latency) is built and M2 (full UI) is under way. B
 | Dynamics for bands in the linear-phase path | Not yet |
 | Auto gain: estimated from the curve, or loudness matched (K-weighted, input against output) | Built (M5) |
 | Spectral bands: a gain per frequency inside the band, with absolute and resonance modes | Built (M5) |
-| Character (saturation), instance linking, EQ match, CLAP, accessibility pass (M5 to M7) | Not yet |
+| Character: Tube and Iron saturation at 4x, with drive (View menu; first voicing, not yet tuned by ear) | Built (M5) |
+| Instance linking, EQ match, CLAP, accessibility pass (M6, M7) | Not yet |
 
 Known gaps:
 

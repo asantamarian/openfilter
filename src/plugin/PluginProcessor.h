@@ -103,7 +103,7 @@ private:
     Engine engine;
     std::array<BandPtrs, kMaxBands> bandPtrs {};
     std::atomic<float>* gainScalePtr = nullptr, *outGainPtr = nullptr, *outPanPtr = nullptr,
-                      * invertPtr = nullptr, *bypassPtr = nullptr, *deltaPtr = nullptr, *phaseModePtr = nullptr, *linQualityPtr = nullptr, *autoGainPtr = nullptr, *lookaheadPtr = nullptr, *scListenPtr = nullptr;
+                      * invertPtr = nullptr, *bypassPtr = nullptr, *deltaPtr = nullptr, *phaseModePtr = nullptr, *linQualityPtr = nullptr, *autoGainPtr = nullptr, *lookaheadPtr = nullptr, *scListenPtr = nullptr, *characterPtr = nullptr, *drivePtr = nullptr;
     juce::AudioProcessorParameter* bypassParam = nullptr;
     std::vector<double> work[2];
     std::vector<float> tap;

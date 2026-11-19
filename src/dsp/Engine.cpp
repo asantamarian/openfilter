@@ -275,9 +275,11 @@ int Engine::lookaheadSamples (int setting, double sampleRate) noexcept
     return static_cast<int> (std::lround (ms[std::clamp (setting, 0, 3)] * 0.001 * sampleRate));
 }
 
-int Engine::latencyFor (int phaseMode, double sampleRate, int linQuality, bool withSpectral, int lookaheadSetting) noexcept
+int Engine::latencyFor (int phaseMode, double sampleRate, int linQuality, bool withSpectral, int lookaheadSetting, int characterMode) noexcept
 {
-    const int extra = (withSpectral ? SpectralLane::frameFor (sampleRate) : 0) + lookaheadSamples (lookaheadSetting, sampleRate);
+    // The character stage oversamples exactly like Natural mode, with the same round trip.
+    const int charDelay = characterMode == 0 ? 0 : sampleRate < 70000.0 ? kSteepHalf + (kWideHalf + 1) / 2 : sampleRate < 140000.0 ? kWideHalf : 0;
+    const int extra = (withSpectral ? SpectralLane::frameFor (sampleRate) : 0) + lookaheadSamples (lookaheadSetting, sampleRate) + charDelay;
     if (phaseMode == 2 || phaseMode == 3)
         return FirLane::latencyFor (linQuality, sampleRate) + extra;
     switch (oversamplingFor (phaseMode, sampleRate))
@@ -348,15 +350,23 @@ void Engine::prepare (double sampleRate, int maxBlock, int)
     doneSerial.store (mailSerial.load());
     for (auto& b : lookBuf)
         b.assign (static_cast<size_t> (lookaheadSamples (3, sampleRate) + 1), 0.0);
-    configure (phaseMode, linQuality, spectralOn, lookahead);
+    configure (phaseMode, linQuality, spectralOn, lookahead, character);
     reset();
 
     workerRunning.store (true);
     worker = std::thread ([this] { workerLoop(); });
 }
 
-void Engine::configure (int mode, int quality, bool withSpectral, int lookaheadSetting) noexcept
+void Engine::configure (int mode, int quality, bool withSpectral, int lookaheadSetting, int characterMode) noexcept
 {
+    character = characterMode;
+    charFactor = characterMode == 0 ? 1 : fs < 70000.0 ? 4 : fs < 140000.0 ? 2 : 1;
+    for (auto& ch : charStages)
+    {
+        ch.first.design (charFactor == 4 ? kSteepHalf : kWideHalf);
+        ch.second.design (kWideHalf);
+        ch.pad = ch.shelf = ch.unshelf = ch.dcIn = ch.dcOut = 0.0;
+    }
     phaseMode = mode;
     linQuality = quality;
     spectralOn = withSpectral;
@@ -368,7 +378,7 @@ void Engine::configure (int mode, int quality, bool withSpectral, int lookaheadS
     spectral.reset();
     firMode = mode == 2 || mode == 3;
     factor = oversamplingFor (mode, fs);
-    latency.store (latencyFor (mode, fs, quality, withSpectral, lookaheadSetting), std::memory_order_relaxed);
+    latency.store (latencyFor (mode, fs, quality, withSpectral, lookaheadSetting, characterMode), std::memory_order_relaxed);
     for (auto& ch : stages)
     {
         ch.first.design (factor == 4 ? kSteepHalf : kWideHalf);
@@ -441,6 +451,13 @@ void Engine::reset() noexcept
     controlPhase = 0;
     fresh = true;
     modeFade = 1.0;
+    for (auto& ch : charStages)
+    {
+        ch.first.reset();
+        ch.second.reset();
+        ch.pad = ch.shelf = ch.unshelf = ch.dcIn = ch.dcOut = 0.0;
+    }
+    driveNow = driveTarget;
     kDry.reset();
     kWet.reset();
     msDry = msWet = 0.0;
@@ -461,13 +478,16 @@ void Engine::updateTargets (const ParamSnapshot& params, bool mono) noexcept
     const int quality = std::clamp (params.linQuality, 0, 4);
     const bool wantSpectral = params.wantsSpectral();
     const int wantLookahead = std::clamp (params.lookahead, 0, 3);
-    if (params.phaseMode != phaseMode || (firMode && quality != linQuality) || wantSpectral != spectralOn || wantLookahead != lookahead)
+    const int wantCharacter = std::clamp (params.character, 0, 2);
+    driveTarget = std::clamp (params.drive, 0.0, 1.0);
+    if (params.phaseMode != phaseMode || (firMode && quality != linQuality) || wantSpectral != spectralOn || wantLookahead != lookahead
+        || wantCharacter != character)
     {
         // A different phase mode, kernel length, lookahead, or the first or last spectral band
         // changes latency. None of these is automatable, so a short fade-in after the switch
         // is enough.
         const bool wasFresh = fresh;
-        configure (params.phaseMode, quality, wantSpectral, wantLookahead);
+        configure (params.phaseMode, quality, wantSpectral, wantLookahead, wantCharacter);
         modeFade = wasFresh ? 1.0 : 0.0;
     }
     if (spectralOn)
@@ -630,6 +650,92 @@ void Engine::process (double* const* io, int numChannels, int numSamples, const 
         auto& slot = peaks[static_cast<size_t> (ch)];
         slot.store (std::max (slot.load (std::memory_order_relaxed), static_cast<float> (pk)), std::memory_order_relaxed);
     }
+}
+
+void Engine::processCharacter (double* left, double* right, int n) noexcept
+{
+    double* io[2] = { left, right };
+    const int channels = right != nullptr ? 2 : 1;
+    const int m = n * charFactor;
+    const double driveStep = (driveTarget - driveNow) / std::max (1, m);
+    const double shelfCoef = 1.0 - std::exp (-2.0 * std::numbers::pi * 80.0 / fs);
+    const double unshelfCoef = 1.0 - std::exp (-2.0 * std::numbers::pi * 160.0 / fs);
+    const double dcCoef = std::exp (-2.0 * std::numbers::pi * 5.0 / fs);
+
+    for (int ch = 0; ch < channels; ++ch)
+    {
+        auto& st = charStages[static_cast<size_t> (ch)];
+        double* x = io[ch];
+
+        // Iron: lows are pushed into the saturator 6 dB harder, and pulled back after it.
+        if (character == 2)
+            for (int i = 0; i < n; ++i)
+            {
+                st.shelf += (x[i] - st.shelf) * shelfCoef;
+                x[i] += st.shelf;
+            }
+
+        double* up = x;
+        if (charFactor == 4)
+        {
+            st.first.up (x, n, st.mid.data());
+            st.second.up (st.mid.data(), 2 * n, st.work.data());
+            up = st.work.data();
+        }
+        else if (charFactor == 2)
+        {
+            st.first.up (x, n, st.work.data());
+            up = st.work.data();
+        }
+
+        double drive = driveNow;
+        if (character == 1)
+        {
+            // Tube: an asymmetric tanh, unity gain for small signals. Even and odd harmonics.
+            for (int i = 0; i < m; ++i)
+            {
+                drive += driveStep;
+                const double d = 1.0 + 7.0 * drive, bias = 0.15 * drive, tb = std::tanh (bias);
+                up[i] = (std::tanh (d * up[i] + bias) - tb) / (d * (1.0 - tb * tb));
+            }
+        }
+        else
+        {
+            // Iron: a symmetric soft limit, unity gain for small signals. Odd harmonics.
+            for (int i = 0; i < m; ++i)
+            {
+                drive += driveStep;
+                const double d = 1.0 + 7.0 * drive;
+                up[i] = up[i] / std::pow (1.0 + std::pow (std::abs (d * up[i]), 2.5), 0.4);
+            }
+        }
+
+        if (charFactor == 4)
+        {
+            st.second.down (up, 2 * n, st.mid.data());
+            for (int i = 0; i < 2 * n; ++i)   // one extra sample at 2x: a whole number of samples overall
+                std::swap (st.pad, st.mid[static_cast<size_t> (i)]);
+            st.first.down (st.mid.data(), n, x);
+        }
+        else if (charFactor == 2)
+            st.first.down (up, n, x);
+
+        if (character == 2)   // inverse of the +6 dB shelf
+            for (int i = 0; i < n; ++i)
+            {
+                st.unshelf += (x[i] - st.unshelf) * unshelfCoef;
+                x[i] -= 0.5 * st.unshelf;
+            }
+        else                  // Tube's bias leaves a little DC: block it at 5 Hz
+            for (int i = 0; i < n; ++i)
+            {
+                const double y = x[i] - st.dcIn + dcCoef * st.dcOut;
+                st.dcIn = x[i];
+                st.dcOut = y;
+                x[i] = y;
+            }
+    }
+    driveNow = driveTarget;
 }
 
 bool Engine::runBands (double* left, double* right, int n) noexcept
@@ -806,6 +912,9 @@ void Engine::processSegment (double* const* io, int numChannels, int offset, int
     // Spectral bands: one short-time Fourier stage after the others, adding one frame of delay.
     if (spectralOn)
         spectral.process (left, right, n);
+
+    if (character != 0)
+        processCharacter (left, right, n);
 
     // Loudness-matched auto gain listens to the delayed input and to the processed signal.
     if (autoMode == 2)

@@ -83,7 +83,7 @@ public:
     /** Latency a mode will have at a sample rate: lets the plugin tell the host from the
         message thread. Phase modes: 0 zero latency, 1 natural, 2 linear, 3 mixed. linQuality
         (0..4) only matters for linear and mixed. */
-    static int latencyFor (int phaseMode, double sampleRate, int linQuality = 1, bool spectral = false, int lookahead = 0) noexcept;
+    static int latencyFor (int phaseMode, double sampleRate, int linQuality = 1, bool spectral = false, int lookahead = 0, int character = 0) noexcept;
     static int lookaheadSamples (int lookahead, double sampleRate) noexcept;
 
     /** For tests: true once the linear-phase kernel matches the bands last sent to it. */
@@ -127,7 +127,8 @@ private:
     ParamSnapshot autoSeen {};
     bool autoSeenValid = false;
     std::atomic<float> autoGainShown { 0.0f };
-    void configure (int mode, int quality, bool withSpectral, int lookaheadSetting) noexcept;
+    void configure (int mode, int quality, bool withSpectral, int lookaheadSetting, int characterMode) noexcept;
+    void processCharacter (double* left, double* right, int n) noexcept;
     void postFirRequest (const ParamSnapshot& params) noexcept;
     void workerLoop();
     void stopWorker();
@@ -158,6 +159,19 @@ private:
     };
     SpectralLane spectral;
     bool spectralOn = false;
+    // Character stage (docs/spec/03-dsp.md section 9): saturation at 4x (2x at 88.2/96 kHz).
+    struct CharChannel
+    {
+        Halfband first, second;
+        std::array<double, 256> mid {};
+        std::array<double, 512> work {};
+        double pad = 0.0;
+        double shelf = 0.0, unshelf = 0.0, dcIn = 0.0, dcOut = 0.0;
+    };
+    std::array<CharChannel, 2> charStages {};
+    int character = 0, charFactor = 1;
+    double driveNow = 0.3, driveTarget = 0.3;
+
     int lookahead = 0, lookaheadLen = 0, lookPos = 0;
     std::vector<double> lookBuf[2];
     bool soloFromSidechain = false;

@@ -120,7 +120,8 @@ if(OF_BUILD_TESTS)
     tests/unit/natural_tests.cpp
     tests/unit/dynamics_tests.cpp
     tests/unit/linear_tests.cpp
-    tests/unit/spectral_tests.cpp)
+    tests/unit/spectral_tests.cpp
+    tests/unit/character_tests.cpp)
   target_link_libraries(of_tests PRIVATE of_dsp Catch2::Catch2WithMain)
   add_test(NAME of_tests COMMAND of_tests)
 endif()

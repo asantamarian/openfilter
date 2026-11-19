@@ -40,10 +40,13 @@ OpenFilterProcessor::OpenFilterProcessor()
     autoGainPtr = raw ("auto_gain");
     lookaheadPtr = raw ("lookahead");
     scListenPtr = raw ("sc_listen");
+    characterPtr = raw ("character");
+    drivePtr = raw ("drive");
     bypassParam = apvts.getParameter ("bypass");
     apvts.addParameterListener ("phase_mode", this);
     apvts.addParameterListener ("lin_quality", this);
     apvts.addParameterListener ("lookahead", this);
+    apvts.addParameterListener ("character", this);
 }
 
 OpenFilterProcessor::~OpenFilterProcessor()
@@ -51,6 +54,7 @@ OpenFilterProcessor::~OpenFilterProcessor()
     apvts.removeParameterListener ("phase_mode", this);
     apvts.removeParameterListener ("lin_quality", this);
     apvts.removeParameterListener ("lookahead", this);
+    apvts.removeParameterListener ("character", this);
     for (int b = 0; b < kMaxBands; ++b)
         for (const char* suffix : { "dyn", "used", "shape" })
             apvts.removeParameterListener (params::bandId (b, suffix), this);
@@ -63,7 +67,7 @@ void OpenFilterProcessor::updateLatency()
     const double rate = getSampleRate() > 0.0 ? getSampleRate() : 48000.0;
     ParamSnapshot snapshot;
     readSnapshot (snapshot);
-    setLatencySamples (Engine::latencyFor (mode, rate, juce::roundToInt (linQualityPtr->load()), snapshot.wantsSpectral(), snapshot.lookahead));
+    setLatencySamples (Engine::latencyFor (mode, rate, juce::roundToInt (linQualityPtr->load()), snapshot.wantsSpectral(), snapshot.lookahead, snapshot.character));
 }
 
 //==============================================================================
@@ -130,6 +134,8 @@ void OpenFilterProcessor::readSnapshot (ParamSnapshot& s) const noexcept
     s.autoGain = juce::roundToInt (f (autoGainPtr));
     s.lookahead = juce::roundToInt (f (lookaheadPtr));
     s.detectorListen = f (scListenPtr) > 0.5f;
+    s.character = juce::roundToInt (f (characterPtr));
+    s.drive = f (drivePtr) * 0.01;
     s.gainScale = f (gainScalePtr) * 0.01;
     s.outGainDb = f (outGainPtr);
     s.pan = f (outPanPtr) * 0.01;

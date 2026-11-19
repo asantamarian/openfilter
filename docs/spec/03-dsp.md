@@ -366,15 +366,23 @@ at -12 and -36 dBFS and leaving plain noise within 1 dB.
 
 ## 9. Character stage
 
-Off (bit-transparent) when Clean. Otherwise 4x oversampled (linear-phase FIR,
-latency reported), `d = 1 + 7 * drive` *(tune)*:
+Off (bit-transparent, no latency) when Clean. Otherwise the saturator runs at 4x
+(2x at 88.2/96 kHz, 1x above) through the same half-band resamplers as Natural
+mode, adding the same latency (76, 13 or 0 samples). It sits after the spectral
+stage and before the output section. With `d = 1 + 7 * drive`:
 
-- **Tube**: `y = (tanh(d*x + b) - tanh(b)) / d`, `b = 0.15 * drive`, followed by a
-  5 Hz DC blocker. Even and odd harmonics.
-- **Iron**: +6 dB low shelf at 80 Hz, `y = x / (1 + |d*x|^2.5)^(1/2.5)`, inverse
-  shelf. Level-dependent low-frequency thickening, odd harmonics.
+- **Tube**: `y = (tanh(d*x + b) - tanh(b)) / (d * (1 - tanh(b)^2))`, `b = 0.15 * drive`,
+  followed by a 5 Hz DC blocker. Even and odd harmonics.
+- **Iron**: +6 dB first-order low shelf at 80 Hz, `y = x / (1 + |d*x|^2.5)^(1/2.5)`,
+  then the inverse shelf. Odd harmonics only, and lows saturate harder.
 
-Both are unity gain for small signals. Voicing is research item R-4.
+Both are unity gain for small signals; drive is smoothed per sample. **Built**,
+with the constants above as a first voicing: nobody has listened to it yet, so
+research item R-4 (voicing) stays open. Measured at -6 dBFS and 50 % drive: the
+fundamental drops about 6 dB, the 3rd harmonic sits at -26 dB, Tube's 2nd at
+-43 dB, Iron's 2nd below -300 dB. A loud 9 kHz tone leaves aliases more than
+70 dB below itself. There is no level compensation for loud signals: use auto
+gain (loudness) if the drop matters. Verified by `tests/unit/character_tests.cpp`.
 
 ## 10. Output section
 

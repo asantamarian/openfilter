@@ -319,6 +319,18 @@ void OpenFilterEditor::showViewMenu()
     menu.addSubMenu ("Display range", range);
     menu.addSubMenu ("Interface size", scale);
     menu.addSubMenu ("Dynamics lookahead", look);
+
+    // Character: saturation after the EQ. Drive is also a host parameter.
+    juce::PopupMenu character;
+    const int charNow = juce::roundToInt (processor.apvts.getRawParameterValue ("character")->load());
+    const int driveNow = juce::roundToInt (processor.apvts.getRawParameterValue ("drive")->load());
+    const char* charNames[] = { "Clean", "Tube (even and odd harmonics)", "Iron (odd harmonics, thicker lows)" };
+    for (int i = 0; i < 3; ++i)
+        character.addItem (6000 + i, charNames[i], true, i == charNow);
+    character.addSeparator();
+    for (int percent : { 10, 20, 30, 50, 70, 100 })
+        character.addItem (6100 + percent, "Drive " + juce::String (percent) + " %", charNow != 0, driveNow == percent);
+    menu.addSubMenu ("Character", character);
     menu.addSeparator();
     menu.addSubMenu ("Slots", copy);
     menu.addSubMenu ("History", history);
@@ -331,6 +343,16 @@ void OpenFilterEditor::showViewMenu()
         auto& proc = safe->processor;
         if (result == 1) proc.tableOpen = ! proc.tableOpen;
         else if (result == 2) proc.analyzerOn = ! proc.analyzerOn;
+        else if (result >= 6100)
+        {
+            if (auto* p = proc.apvts.getParameter ("drive"))
+                p->setValueNotifyingHost (p->convertTo0to1 (static_cast<float> (result - 6100)));
+        }
+        else if (result >= 6000)
+        {
+            if (auto* p = proc.apvts.getParameter ("character"))
+                p->setValueNotifyingHost (p->convertTo0to1 (static_cast<float> (result - 6000)));
+        }
         else if (result >= 5000)
         {
             if (auto* p = proc.apvts.getParameter ("lookahead"))
