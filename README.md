@@ -29,6 +29,8 @@ Milestone M1 (static EQ, zero latency) is built and M2 (full UI) is under way. B
 | Auto gain: estimated from the curve, or loudness matched (K-weighted, input against output) | Built (M5) |
 | Spectral bands: a gain per frequency inside the band, with absolute and resonance modes | Built (M5) |
 | Character: Tube and Iron saturation at 4x, with drive (View menu; first voicing, not yet tuned by ear) | Built (M5) |
+| Nine factory presets; analyzer speed, tilt, range and freeze; piano strip; number keys to select bands; copy, paste and duplicate bands | Built |
+| Paged dock, multi-band selection, spectrogram, full screen, embedded fonts, a dock control for the free detector filter | Not yet |
 | Instance linking, EQ match, CLAP, accessibility pass (M6, M7) | Not yet |
 
 Known gaps:

@@ -78,7 +78,10 @@ public:
     // View settings, kept in the session state.
     float uiScale = 1.0f;
     double displayRangeDb = 12.0;
-    bool analyzerOn = true, tableOpen = false;
+    bool analyzerOn = true, tableOpen = false, pianoStrip = false, analyzerFrozen = false;
+    int analyzerSpeed = 1;          // 0 slow .. 3 very fast
+    float analyzerTilt = 4.5f;      // dB per octave around 1 kHz
+    int analyzerRange = 90;         // dB shown below 0 dBFS
 
     // A/B/C/D: four full parameter snapshots (docs/spec/06-state.md section 5). Bypass and
     // delta are left alone when a slot is recalled.

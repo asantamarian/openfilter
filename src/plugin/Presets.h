@@ -21,5 +21,14 @@ juce::var toVar (const OpenFilterProcessor&, const juce::String& name);
 bool apply (OpenFilterProcessor&, const juce::var& preset, juce::String& error);
 
 bool save (const OpenFilterProcessor&, const juce::File& file, juce::String& error);
+
+/** Built-in starting points. Read-only; shown under "Factory" in the preset menu. */
+juce::StringArray factoryNames();
+bool loadFactory (OpenFilterProcessor&, int index, juce::String& error);
+
+/** One band as the object used inside a preset's "bands" array (also the clipboard format). */
+juce::var bandToVar (const OpenFilterProcessor&, int band);
+/** Adds a band from such an object in the lowest free slot. Returns the slot, or -1. */
+int addBandFromVar (OpenFilterProcessor&, const juce::var& band);
 bool load (OpenFilterProcessor&, const juce::File& file, juce::String& error);
 } // namespace of::presets

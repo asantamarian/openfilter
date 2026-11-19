@@ -1,6 +1,7 @@
 #include "ResponseDisplay.h"
 
 #include "dsp/design/Prototype.h"
+#include "plugin/Presets.h"
 
 namespace of
 {
@@ -125,6 +126,13 @@ void ResponseDisplay::refresh()
     lastUpdateMs = now;
     preAnalyzer.setSampleRate (processor.getSampleRate());
     postAnalyzer.setSampleRate (processor.getSampleRate());
+    // Frozen: the traces stay as they are (and whatever the audio thread queues is dropped).
+    if (analyzerVisible && analyzerFrozen)
+    {
+        processor.preFifo.clear();
+        processor.postFifo.clear();
+        return;
+    }
     const bool preLive = analyzerVisible && preAnalyzer.update (elapsed), postLive = analyzerVisible && postAnalyzer.update (elapsed);
     if (preLive || postLive || spectraShown)
     {
@@ -144,8 +152,9 @@ void ResponseDisplay::rebuildSpectra()
 
     const int step = 2, count = w / step + 1;
     const float plotBottom = static_cast<float> (getHeight() - kAxisHeight);
-    // Analyzer scale: -90 dBFS at the bottom of the plot, 0 dBFS at the top.
-    const auto toY = [plotBottom] (float db) { return plotBottom * (1.0f - juce::jlimit (0.0f, 1.0f, (db + 90.0f) / 90.0f)); };
+    // Analyzer scale: the chosen range at the bottom of the plot, 0 dBFS at the top.
+    const float shown = analyzerRange;
+    const auto toY = [plotBottom, shown] (float db) { return plotBottom * (1.0f - juce::jlimit (0.0f, 1.0f, (db + shown) / shown)); };
     // 1/6-octave smoothing: display points are evenly spaced in log frequency.
     const int half = juce::jmax (1, juce::roundToInt (count / std::log2 (kMaxFreq / kMinFreq) / 12.0));
 
@@ -199,6 +208,30 @@ void ResponseDisplay::setRangeDb (double range)
         return;
     rangeDb = range;
     rebuildCurves();
+    repaint();
+}
+
+void ResponseDisplay::setAnalyzerOptions (float releasePerSecond, float tiltPerOctave, int rangeDb, bool frozen)
+{
+    for (auto* a : { &preAnalyzer, &postAnalyzer })
+    {
+        a->setReleasePerSecond (releasePerSecond);
+        a->setTiltPerOctave (tiltPerOctave);
+    }
+    analyzerRange = static_cast<float> (rangeDb);
+    if (analyzerFrozen && ! frozen)   // drop what queued up while frozen
+    {
+        processor.preFifo.clear();
+        processor.postFifo.clear();
+    }
+    analyzerFrozen = frozen;
+    rebuildSpectra();
+    repaint();
+}
+
+void ResponseDisplay::setPianoStrip (bool show)
+{
+    piano = show;
     repaint();
 }
 
@@ -366,6 +399,29 @@ void ResponseDisplay::paint (juce::Graphics& g)
         g.setColour (juce::Colours::black.withAlpha (0.13f));
         for (int y = 0; y < getHeight() - kAxisHeight; y += 3)
             g.fillRect (0, y, getWidth(), 1);
+    }
+
+    // Piano strip: one key per semitone along the bottom of the plot, C notes labelled.
+    if (piano)
+    {
+        const float top = plotBottom - 14.0f;
+        g.setFont (theme::mono (9.0f));
+        for (int note = 12; note <= 135; ++note)
+        {
+            const double f = 440.0 * std::pow (2.0, (note - 69) / 12.0);
+            const float x0 = freqToX (f * std::pow (2.0, -1.0 / 24.0)), x1 = freqToX (f * std::pow (2.0, 1.0 / 24.0));
+            if (x1 < 0.0f || x0 > w)
+                continue;
+            const int pitch = note % 12;
+            const bool black = pitch == 1 || pitch == 3 || pitch == 6 || pitch == 8 || pitch == 10;
+            g.setColour (black ? theme::ground : theme::lineStrong.withAlpha (0.75f));
+            g.fillRect (x0 + 0.5f, top, juce::jmax (1.0f, x1 - x0 - 1.0f), 14.0f);
+            if (pitch == 0 && x1 - x0 > 5.0f)
+            {
+                g.setColour (theme::text);
+                g.drawText ("C" + juce::String (note / 12 - 1), juce::Rectangle<float> (x0 + 2.0f, top, 24.0f, 14.0f), juce::Justification::centredLeft, false);
+            }
+        }
     }
 
     // Nodes.
@@ -598,8 +654,53 @@ bool ResponseDisplay::keyPressed (const juce::KeyPress& key)
 {
     if (key.getKeyCode() == 's' || key.getKeyCode() == 'S')
         return true;   // handled by keyStateChanged; do not pass it to the host
+
+    const auto mods = key.getModifiers();
+    const int code = key.getKeyCode();
+
+    // 1..9 and 0 select bands 1..10.
+    if (! mods.isAnyModifierKeyDown() && code >= '0' && code <= '9')
+    {
+        const int band = code == '0' ? 9 : code - '1';
+        if (bands[static_cast<size_t> (band)].used)
+            selectBand (band);
+        return true;
+    }
+    // Paste: bands from the clipboard (the same JSON a preset's "bands" array holds).
+    if (mods.isCommandDown() && (code == 'v' || code == 'V'))
+    {
+        juce::var parsed;
+        if (juce::JSON::parse (juce::SystemClipboard::getTextFromClipboard(), parsed).wasOk() && parsed.isArray())
+        {
+            processor.undo.beginNewTransaction ("Paste bands");
+            int last = -1;
+            for (const auto& item : *parsed.getArray())
+                last = juce::jmax (last, presets::addBandFromVar (processor, item));
+            refresh();
+            if (last >= 0)
+                selectBand (last);
+        }
+        return true;
+    }
     if (selected < 0)
         return false;
+
+    // Copy and duplicate the selected band.
+    if (mods.isCommandDown() && (code == 'c' || code == 'C'))
+    {
+        juce::Array<juce::var> list { presets::bandToVar (processor, selected) };
+        juce::SystemClipboard::copyTextToClipboard (juce::JSON::toString (juce::var (list)));
+        return true;
+    }
+    if (mods.isCommandDown() && (code == 'd' || code == 'D'))
+    {
+        processor.undo.beginNewTransaction ("Duplicate band");
+        const int copy = presets::addBandFromVar (processor, presets::bandToVar (processor, selected));
+        refresh();
+        if (copy >= 0)
+            selectBand (copy);
+        return true;
+    }
     const auto& b = bands[static_cast<size_t> (selected)];
 
     if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey)

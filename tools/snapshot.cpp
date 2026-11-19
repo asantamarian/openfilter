@@ -73,6 +73,32 @@ int main (int argc, char** argv)
         std::printf ("preset round trip: %s (%d characters of JSON)\n", presetOk ? "ok" : "MISMATCH", text.length());
     }
 
+    // Every factory preset must load and produce at least one band; a band copied as JSON
+    // and added again must come back the same.
+    bool factoryOk = of::presets::factoryNames().size() >= 5;
+    {
+        of::OpenFilterProcessor scratch;
+        for (int i = 0; i < of::presets::factoryNames().size(); ++i)
+        {
+            juce::String error;
+            const bool loaded = of::presets::loadFactory (scratch, i, error);
+            int used = 0;
+            for (int b = 0; b < of::kMaxBands; ++b)
+                used += scratch.readBand (b).used ? 1 : 0;
+            if (! loaded || used == 0)
+            {
+                factoryOk = false;
+                std::printf ("  factory preset %d failed: %s\n", i, error.toRawUTF8());
+            }
+        }
+        const int copy = of::presets::addBandFromVar (processor, of::presets::bandToVar (processor, b4));
+        const auto x = processor.readBand (b4), y = processor.readBand (copy);
+        factoryOk = factoryOk && copy >= 0 && copy != b4 && x.shape == y.shape && x.place == y.place && x.dyn == y.dyn
+                 && std::abs (x.freq - y.freq) < 1.0e-3 * x.freq && std::abs (x.gainDb - y.gainDb) < 1.0e-3;
+        processor.removeBand (copy);
+        std::printf ("factory presets and band copy: %s (%d presets)\n", factoryOk ? "ok" : "WRONG", of::presets::factoryNames().size());
+    }
+
     // Typed frequency entry.
     const auto near = [] (double a, double b) { return std::abs (a - b) < 1.0e-6 * juce::jmax (1.0, b); };
     using of::params::parseFrequency;
@@ -106,6 +132,8 @@ int main (int argc, char** argv)
         std::printf ("A/B/C/D slots: %s\n", slotsOk ? "ok" : "WRONG");
     }
 
+    // OF_SNAPSHOT_PIANO=1 renders the main image with the piano strip, for checking it by eye.
+    processor.pianoStrip = juce::SystemStats::getEnvironmentVariable ("OF_SNAPSHOT_PIANO", "").isNotEmpty();
     std::unique_ptr<juce::AudioProcessorEditor> editor (processor.createEditor());
 
     // Run some audio through so the meters and the analyzer show something: pink-ish noise
@@ -140,6 +168,7 @@ int main (int argc, char** argv)
 
     // A second image with the band table open and a wider gain range.
     processor.tableOpen = true;
+    processor.pianoStrip = true;
     processor.displayRangeDb = 30.0;
     editor.reset();
     editor.reset (processor.createEditor());
@@ -155,5 +184,5 @@ int main (int argc, char** argv)
         && juce::PNGImageFormat().writeImageToStream (editor->createComponentSnapshot (editor->getLocalBounds(), false, 1.0f), tableStream);
     std::printf ("%s %s\n", tableWritten ? "wrote" : "FAILED to write", tableFile.getFullPathName().toRawUTF8());
 
-    return written && tableWritten && roundTrip && presetOk && parseOk && slotsOk ? 0 : 1;
+    return written && tableWritten && roundTrip && presetOk && parseOk && slotsOk && factoryOk ? 0 : 1;
 }

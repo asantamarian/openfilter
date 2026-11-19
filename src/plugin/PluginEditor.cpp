@@ -286,6 +286,9 @@ void OpenFilterEditor::applyViewSettings()
 {
     display.setRangeDb (processor.displayRangeDb);
     display.setAnalyzerVisible (processor.analyzerOn);
+    constexpr float speeds[] = { 6.0f, 12.0f, 24.0f, 48.0f };
+    display.setAnalyzerOptions (speeds[juce::jlimit (0, 3, processor.analyzerSpeed)], processor.analyzerTilt, processor.analyzerRange, processor.analyzerFrozen);
+    display.setPianoStrip (processor.pianoStrip);
     table.setVisible (processor.tableOpen);
     if (! juce::approximatelyEqual (processor.uiScale, static_cast<float> (getTransform().getScaleFactor())))
         setScaleFactor (processor.uiScale);
@@ -313,8 +316,24 @@ void OpenFilterEditor::showViewMenu()
     if (steps.isEmpty())
         history.addItem (3999, "Nothing to undo", false);
 
+    juce::PopupMenu analyzer;
+    analyzer.addItem (2, "Show", true, processor.analyzerOn);
+    analyzer.addItem (4, "Freeze", processor.analyzerOn, processor.analyzerFrozen);
+    analyzer.addSeparator();
+    const char* speedNames[] = { "Speed: slow", "Speed: medium", "Speed: fast", "Speed: very fast" };
+    for (int i = 0; i < 4; ++i)
+        analyzer.addItem (7000 + i, speedNames[i], true, processor.analyzerSpeed == i);
+    analyzer.addSeparator();
+    analyzer.addItem (7100, "Tilt: none", true, processor.analyzerTilt < 0.1f);
+    analyzer.addItem (7103, "Tilt: 3 dB/oct", true, std::abs (processor.analyzerTilt - 3.0f) < 0.1f);
+    analyzer.addItem (7145, "Tilt: 4.5 dB/oct", true, std::abs (processor.analyzerTilt - 4.5f) < 0.1f);
+    analyzer.addSeparator();
+    for (int db : { 60, 90, 120 })
+        analyzer.addItem (7200 + db, "Range: " + juce::String (db) + " dB", true, processor.analyzerRange == db);
+
     menu.addItem (1, "Band table", true, processor.tableOpen);
-    menu.addItem (2, "Spectrum analyzer", true, processor.analyzerOn);
+    menu.addItem (3, "Piano strip", true, processor.pianoStrip);
+    menu.addSubMenu ("Spectrum analyzer", analyzer);
     menu.addSeparator();
     menu.addSubMenu ("Display range", range);
     menu.addSubMenu ("Interface size", scale);
@@ -343,6 +362,11 @@ void OpenFilterEditor::showViewMenu()
         auto& proc = safe->processor;
         if (result == 1) proc.tableOpen = ! proc.tableOpen;
         else if (result == 2) proc.analyzerOn = ! proc.analyzerOn;
+        else if (result == 3) proc.pianoStrip = ! proc.pianoStrip;
+        else if (result == 4) proc.analyzerFrozen = ! proc.analyzerFrozen;
+        else if (result >= 7200) proc.analyzerRange = result - 7200;
+        else if (result >= 7100) proc.analyzerTilt = static_cast<float> (result - 7100) / 10.0f;
+        else if (result >= 7000) proc.analyzerSpeed = result - 7000;
         else if (result >= 6100)
         {
             if (auto* p = proc.apvts.getParameter ("drive"))
@@ -376,6 +400,12 @@ void OpenFilterEditor::showPresetMenu()
                       true, files[i].getFileNameWithoutExtension() == processor.presetName);
     if (files.isEmpty())
         menu.addItem (99, "No saved presets", false);
+    juce::PopupMenu factory;
+    const auto factoryNames = presets::factoryNames();
+    for (int i = 0; i < factoryNames.size(); ++i)
+        factory.addItem (500 + i, factoryNames[i], true, factoryNames[i] == processor.presetName);
+    menu.addSeparator();
+    menu.addSubMenu ("Factory", factory);
     menu.addSeparator();
     menu.addItem (1, "Save as...");
     menu.addItem (2, "Load from file...");
@@ -389,7 +419,12 @@ void OpenFilterEditor::showPresetMenu()
         auto& proc = safe->processor;
         juce::String error;
 
-        if (result >= 100 && result - 100 < files.size())
+        if (result >= 500)
+        {
+            if (presets::loadFactory (proc, result - 500, error))
+                proc.presetName = presets::factoryNames()[result - 500];
+        }
+        else if (result >= 100 && result - 100 < files.size())
         {
             if (presets::load (proc, files[result - 100], error))
                 proc.presetName = files[result - 100].getFileNameWithoutExtension();

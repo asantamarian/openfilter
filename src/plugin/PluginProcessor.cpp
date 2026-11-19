@@ -229,6 +229,10 @@ void OpenFilterProcessor::getStateInformation (juce::MemoryBlock& dest)
     ui.setProperty ("displayRange", displayRangeDb, nullptr);
     ui.setProperty ("analyzer", analyzerOn, nullptr);
     ui.setProperty ("table", tableOpen, nullptr);
+    ui.setProperty ("piano", pianoStrip, nullptr);
+    ui.setProperty ("analyzerSpeed", analyzerSpeed, nullptr);
+    ui.setProperty ("analyzerTilt", analyzerTilt, nullptr);
+    ui.setProperty ("analyzerRange", analyzerRange, nullptr);
     root.appendChild (ui, nullptr);
 
     juce::ValueTree slotsTree ("Slots");
@@ -281,6 +285,11 @@ void OpenFilterProcessor::setStateInformation (const void* data, int size)
         displayRangeDb = range <= 3.0 ? 3.0 : range <= 6.0 ? 6.0 : range <= 12.0 ? 12.0 : 30.0;
         analyzerOn = ui.getProperty ("analyzer", true);
         tableOpen = ui.getProperty ("table", false);
+        pianoStrip = ui.getProperty ("piano", false);
+        analyzerSpeed = juce::jlimit (0, 3, static_cast<int> (ui.getProperty ("analyzerSpeed", 1)));
+        analyzerTilt = juce::jlimit (0.0f, 6.0f, static_cast<float> (ui.getProperty ("analyzerTilt", 4.5)));
+        const int shownRange = ui.getProperty ("analyzerRange", 90);
+        analyzerRange = shownRange <= 60 ? 60 : shownRange <= 90 ? 90 : 120;
     }
 
     for (auto& values : slots)

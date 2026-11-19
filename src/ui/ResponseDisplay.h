@@ -24,6 +24,9 @@ public:
     /** Vertical range of the gain axis: 3, 6, 12 or 30 dB each way. */
     void setRangeDb (double range);
     void setAnalyzerVisible (bool visible);
+    /** speed in dB per second of release; tilt in dB per octave; range in dB below 0 dBFS. */
+    void setAnalyzerOptions (float releasePerSecond, float tiltPerOctave, int rangeDb, bool frozen);
+    void setPianoStrip (bool show);
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -65,7 +68,8 @@ private:
     juce::Path preFill, postLine;
     std::vector<float> spectrumPoints, spectrumSmooth;
     juce::uint32 lastUpdateMs = 0;
-    bool spectraShown = false, analyzerVisible = true;
+    bool spectraShown = false, analyzerVisible = true, analyzerFrozen = false, piano = false;
+    float analyzerRange = 90.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ResponseDisplay)
 };

@@ -58,6 +58,102 @@ juce::Array<juce::File> list()
     return files;
 }
 
+juce::var bandToVar (const OpenFilterProcessor& processor, int b)
+{
+    auto* band = new juce::DynamicObject();
+    for (const char* key : kBandKeys)
+        if (auto* p = processor.bandParam (b, key))
+        {
+            // Omitted keys take the default on load; shape and frequency are always written.
+            const bool always = juce::String (key) == "shape" || juce::String (key) == "freq";
+            if (always || ! juce::approximatelyEqual (p->getValue(), p->getDefaultValue()))
+                band->setProperty (key, plainValue (*p));
+        }
+    return band;
+}
+
+int addBandFromVar (OpenFilterProcessor& processor, const juce::var& band)
+{
+    if (! band.isObject())
+        return -1;
+    for (int b = 0; b < kMaxBands; ++b)
+    {
+        if (processor.readBand (b).used)
+            continue;
+        for (const char* key : kBandKeys)
+            if (auto* p = processor.bandParam (b, key))
+            {
+                if (band.hasProperty (key))
+                    setPlain (*p, band[key]);
+                else if (! juce::approximatelyEqual (p->getValue(), p->getDefaultValue()))
+                    p->setValueNotifyingHost (p->getDefaultValue());
+            }
+        if (auto* used = processor.bandParam (b, "used"))
+            used->setValueNotifyingHost (1.0f);
+        return b;
+    }
+    return -1;
+}
+
+namespace
+{
+// Factory presets: plain starting points, written in the preset format itself.
+struct Factory { const char* name; const char* bands; };
+const Factory kFactory[] = {
+    { "Low end cleanup",
+      R"([{"shape":"Low Cut","slope":"24 dB/oct","freq":35,"q":0.7071},
+          {"shape":"Bell","freq":250,"gain":-2.5,"q":1.2}])" },
+    { "Vocal clarity",
+      R"([{"shape":"Low Cut","slope":"18 dB/oct","freq":90,"q":0.7071},
+          {"shape":"Bell","freq":300,"gain":-2.5,"q":1.3},
+          {"shape":"Bell","freq":3500,"gain":2.0,"q":1.0},
+          {"shape":"High Shelf","freq":10000,"gain":2.5,"q":1.0}])" },
+    { "Air shelf",
+      R"([{"shape":"High Shelf","freq":12000,"gain":3.0,"q":0.8}])" },
+    { "Tame harshness (dynamic)",
+      R"([{"shape":"Bell","freq":3200,"gain":0,"q":2.0,"dyn":"Dynamic","range":-5,"athr":true,"thr":-36,"ratio":4,"atk":5,"rel":120}])" },
+    { "Resonance tamer (spectral)",
+      R"([{"shape":"Bell","freq":2500,"gain":0,"q":0.5,"dyn":"Spectral","smode":"Resonance","range":-8,"thr":-60,"ratio":4,"atk":10,"rel":150}])" },
+    { "Kick room (cut the bass around 60 Hz on mid)",
+      R"([{"shape":"Bell","freq":60,"gain":-3.0,"q":2.5,"place":"Mid"}])" },
+    { "Wider top (side shelf)",
+      R"([{"shape":"High Shelf","freq":6000,"gain":2.5,"q":0.8,"place":"Side"},
+          {"shape":"Low Cut","slope":"12 dB/oct","freq":120,"q":0.7071,"place":"Side"}])" },
+    { "Gentle master tilt",
+      R"([{"shape":"Tilt Shelf","slope":"6 dB/oct","freq":1000,"gain":1.5}])" },
+    { "Telephone",
+      R"([{"shape":"Low Cut","slope":"24 dB/oct","freq":350,"q":0.7071},
+          {"shape":"High Cut","slope":"24 dB/oct","freq":3200,"q":0.7071},
+          {"shape":"Bell","freq":1200,"gain":4.0,"q":1.0}])" },
+};
+} // namespace
+
+juce::StringArray factoryNames()
+{
+    juce::StringArray names;
+    for (const auto& f : kFactory)
+        names.add (f.name);
+    return names;
+}
+
+bool loadFactory (OpenFilterProcessor& processor, int index, juce::String& error)
+{
+    if (index < 0 || index >= static_cast<int> (std::size (kFactory)))
+        return false;
+    juce::var bands;
+    if (juce::JSON::parse (kFactory[index].bands, bands).failed())
+    {
+        error = "Factory preset is malformed.";
+        return false;
+    }
+    auto* root = new juce::DynamicObject();
+    root->setProperty ("format", kFormat);
+    root->setProperty ("version", 1);
+    root->setProperty ("name", kFactory[index].name);
+    root->setProperty ("bands", bands);
+    return apply (processor, juce::var (root), error);
+}
+
 juce::var toVar (const OpenFilterProcessor& processor, const juce::String& name)
 {
     auto* root = new juce::DynamicObject();
@@ -73,20 +169,8 @@ juce::var toVar (const OpenFilterProcessor& processor, const juce::String& name)
 
     juce::Array<juce::var> bands;
     for (int b = 0; b < kMaxBands; ++b)
-    {
-        if (! processor.readBand (b).used)
-            continue;
-        auto* band = new juce::DynamicObject();
-        for (const char* key : kBandKeys)
-            if (auto* p = processor.bandParam (b, key))
-            {
-                // Omitted keys take the default on load; shape and frequency are always written.
-                const bool always = juce::String (key) == "shape" || juce::String (key) == "freq";
-                if (always || ! juce::approximatelyEqual (p->getValue(), p->getDefaultValue()))
-                    band->setProperty (key, plainValue (*p));
-            }
-        bands.add (band);
-    }
+        if (processor.readBand (b).used)
+            bands.add (bandToVar (processor, b));
     root->setProperty ("bands", bands);
     return root;
 }
