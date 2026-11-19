@@ -89,6 +89,9 @@ public:
     static int oversamplingFor (int phaseMode, double sampleRate) noexcept;
     int controlBlockSize() const noexcept { return controlLen; }
 
+    /** Gain auto gain is applying right now, in dB, for the display. */
+    float autoGainDb() const noexcept { return autoGainShown.load (std::memory_order_relaxed); }
+
     /** Current dynamic gain of a band in dB, for the display. */
     float dynamicGainDb (int band) const noexcept { return dynGains[static_cast<size_t> (band)].load (std::memory_order_relaxed); }
 
@@ -100,6 +103,24 @@ private:
     void processSegment (double* const* io, int numChannels, int offset, int n,
                          const double* const* sidechain, int sidechainChannels) noexcept;
     void updateSolo (const ParamSnapshot& params) noexcept;
+    double curveAutoGainDb (const ParamSnapshot& params) const noexcept;
+
+    // Auto gain (docs/spec/03-dsp.md section 10).
+    struct KWeight   // BS.1770 K-weighting: a high shelf, then a high-pass
+    {
+        double b[2][3] {}, a[2][2] {};
+        double z[2][2][2] {};   // [channel][stage][state]
+        void prepare (double sampleRate) noexcept;
+        double tick (int ch, double x) noexcept;
+        void reset() noexcept;
+    };
+    KWeight kDry, kWet;
+    double msDry = 0.0, msWet = 0.0, loudCoef = 0.0;
+    int autoMode = 0, autoCountdown = 0;
+    double autoTargetDb = 0.0, autoDb = 0.0;
+    ParamSnapshot autoSeen {};
+    bool autoSeenValid = false;
+    std::atomic<float> autoGainShown { 0.0f };
     void configure (int mode, int quality) noexcept;
     void postFirRequest (const ParamSnapshot& params) noexcept;
     void workerLoop();

@@ -276,3 +276,69 @@ TEST_CASE ("engine: bypass and mono", "[engine]")
     run (m, sine, p, 512, 1);
     CHECK_THAT (rmsDb (sine.l, 24000) - inDb, WithinAbs (12.0, 0.1));
 }
+
+TEST_CASE ("auto gain: the curve estimate and the loudness match both level a boost", "[autogain]")
+{
+    // Pink-ish noise: white noise through a gentle low-pass, so lows carry more energy.
+    const auto pinkish = [] (size_t n, unsigned seed)
+    {
+        auto s = noise (n, seed);
+        double zl = 0.0, zr = 0.0;
+        for (size_t i = 0; i < n; ++i)
+        {
+            zl += (s.l[i] - zl) * 0.05;  s.l[i] = zl * 4.0;
+            zr += (s.r[i] - zr) * 0.05;  s.r[i] = zr * 4.0;
+        }
+        return s;
+    };
+    const auto levelDb = [] (const std::vector<double>& x) { return rmsDb (x, x.size() / 2); };
+
+    ParamSnapshot p;
+    p.bands[0] = band (Shape::LowShelf, 300.0, 9.0, 1.0);
+    p.bands[1] = band (Shape::Bell, 2500.0, 6.0, 1.0);
+
+    auto ref = pinkish (48000 * 8, 21);
+    const double inDb = levelDb (ref.l);
+
+    // Off: the boost makes it clearly louder.
+    {
+        Engine e;
+        e.prepare (48000.0, 512, 2);
+        auto s = pinkish (48000 * 8, 21);
+        run (e, s, p);
+        CHECK (levelDb (s.l) - inDb > 4.0);
+        CHECK (e.autoGainDb() == 0.0f);
+    }
+    // Curve: an estimate from the curve alone, applied at once and steady.
+    {
+        p.autoGain = 1;
+        Engine e;
+        e.prepare (48000.0, 512, 2);
+        auto s = pinkish (48000 * 8, 21);
+        run (e, s, p);
+        INFO ("curve mode: output is " << levelDb (s.l) - inDb << " dB from the input, auto gain " << e.autoGainDb());
+        CHECK (e.autoGainDb() < -2.0f);
+        CHECK (std::abs (levelDb (s.l) - inDb) < 3.0);
+    }
+    // Loudness: measured, so it lands close.
+    {
+        p.autoGain = 2;
+        Engine e;
+        e.prepare (48000.0, 512, 2);
+        auto s = pinkish (48000 * 8, 21);
+        run (e, s, p);
+        INFO ("loudness mode: output is " << levelDb (s.l) - inDb << " dB from the input, auto gain " << e.autoGainDb());
+        CHECK (std::abs (levelDb (s.l) - inDb) < 1.5);
+    }
+    // With a flat EQ auto gain must do nothing in either mode.
+    for (int mode : { 1, 2 })
+    {
+        ParamSnapshot flat;
+        flat.autoGain = mode;
+        Engine e;
+        e.prepare (48000.0, 512, 2);
+        auto s = pinkish (48000 * 4, 22);
+        run (e, s, flat);
+        CHECK (std::abs (e.autoGainDb()) < 0.05f);
+    }
+}

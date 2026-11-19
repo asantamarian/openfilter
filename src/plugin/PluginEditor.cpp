@@ -53,6 +53,12 @@ OpenFilterEditor::OpenFilterEditor (OpenFilterProcessor& p)
     balanceDial.setArcColour (theme::text);
     balanceDial.attach (p.apvts.getParameter ("out_pan"), &p.undo);
     addAndMakeVisible (balanceDial);
+    autoBox.addItemList ({ "Auto off", "Auto: curve", "Auto: loud" }, 1);
+    autoBox.setTitle ("Auto gain");
+    autoBox.setTooltip ("Auto gain keeps the level steady so you judge the EQ, not the loudness. Curve: estimated from the EQ curve, instant. Loud: measured loudness of input against output, settles over a couple of seconds.");
+    autoAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (p.apvts, "auto_gain", autoBox);
+    addAndMakeVisible (autoBox);
+
     invertButton.setClickingTogglesState (true);
     invertButton.setTitle ("Invert polarity");
     invertButton.setTooltip ("Invert the polarity of the output.");
@@ -147,13 +153,16 @@ void OpenFilterEditor::resized()
         right.removeFromRight (6);
     }
     latencyArea = right.removeFromRight (78);
+    right.removeFromRight (10);
+    autoBox.setBounds (right.removeFromRight (112));
+    autoArea = right.removeFromRight (58);
     auto left = topBar.reduced (16, 11).withTrimmedLeft (170);
     undoButton.setBounds (left.removeFromLeft (60));
     left.removeFromLeft (6);
     redoButton.setBounds (left.removeFromLeft (60));
     left.removeFromLeft (16);
-    // The slot buttons and the latency readout give way first when the window is narrow.
-    const bool roomy = getWidth() >= 1040;
+    // The slot buttons give way first when the top bar runs out of room.
+    const bool roomy = right.getRight() - left.getX() >= 90 + 16 + 4 * 30 + 3 * 2 + 12;
     const int slotsWidth = roomy ? 4 * 30 + 3 * 2 + 12 : 0;
     presetButton.setBounds (left.removeFromLeft (juce::jlimit (90, 240, right.getRight() - left.getX() - 16 - slotsWidth)));
     left.removeFromLeft (12);
@@ -219,6 +228,14 @@ void OpenFilterEditor::paint (juce::Graphics& g)
     g.setColour (theme::textMuted);
     g.setFont (theme::mono (11.0f));
     g.drawText (juce::String (processor.getLatencySamples()) + " smp", latencyArea, juce::Justification::centredRight, false);
+
+    // What auto gain is doing right now.
+    if (autoBox.getSelectedItemIndex() > 0)
+    {
+        g.setColour (theme::accent);
+        g.setFont (theme::mono (11.0f));
+        g.drawText (params::formatGain (shownAuto), autoArea, juce::Justification::centredRight, false);
+    }
 
     // Output column.
     g.setColour (theme::panel);
@@ -377,6 +394,13 @@ void OpenFilterEditor::showPresetMenu()
 
 void OpenFilterEditor::timerCallback()
 {
+    const float autoNow = processor.autoGainDb();
+    if (std::abs (autoNow - shownAuto) > 0.05f)
+    {
+        shownAuto = autoNow;
+        repaint (autoArea);
+    }
+
     const int phase = phaseBox.getSelectedItemIndex();
     if (qualityBox.isVisible() != (phase >= 2))
     {

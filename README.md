@@ -26,7 +26,8 @@ Milestone M1 (static EQ, zero latency) is built and M2 (full UI) is under way. B
 | Lookahead, free detector filter, sidechain listen (rest of M3) | Not yet |
 | Linear phase (five kernel lengths) and Mixed phase (per-band choice), designed on a worker thread (M4) | Built |
 | Dynamics for bands in the linear-phase path | Not yet |
-| Spectral bands, auto gain, character, instance linking, EQ match, CLAP, accessibility pass (M5 to M7) | Not yet |
+| Auto gain: estimated from the curve, or loudness matched (K-weighted, input against output) | Built (M5) |
+| Spectral bands, character, instance linking, EQ match, CLAP, accessibility pass (M5 to M7) | Not yet |
 
 Known gaps:
 

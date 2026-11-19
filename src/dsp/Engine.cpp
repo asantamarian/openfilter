@@ -177,6 +177,88 @@ void BandProcessor::processLaneB (double* mid, double* side, int n) noexcept
 }
 
 //==============================================================================
+void Engine::KWeight::prepare (double sampleRate) noexcept
+{
+    // Stage 1: high shelf, +4 dB above about 1.7 kHz. Stage 2: high-pass at 38 Hz.
+    const double pi = std::numbers::pi;
+    {
+        const double f0 = 1681.974450955533, G = 3.999843853973347, Q = 0.7071752369554196;
+        const double K = std::tan (pi * f0 / sampleRate), Vh = std::pow (10.0, G / 20.0), Vb = std::pow (Vh, 0.4996667741545416);
+        const double a0 = 1.0 + K / Q + K * K;
+        b[0][0] = (Vh + Vb * K / Q + K * K) / a0;
+        b[0][1] = 2.0 * (K * K - Vh) / a0;
+        b[0][2] = (Vh - Vb * K / Q + K * K) / a0;
+        a[0][0] = 2.0 * (K * K - 1.0) / a0;
+        a[0][1] = (1.0 - K / Q + K * K) / a0;
+    }
+    {
+        const double f0 = 38.13547087602444, Q = 0.5003270373238773;
+        const double K = std::tan (pi * f0 / sampleRate), a0 = 1.0 + K / Q + K * K;
+        b[1][0] = 1.0;  b[1][1] = -2.0;  b[1][2] = 1.0;
+        a[1][0] = 2.0 * (K * K - 1.0) / a0;
+        a[1][1] = (1.0 - K / Q + K * K) / a0;
+    }
+    reset();
+}
+
+void Engine::KWeight::reset() noexcept
+{
+    for (auto& ch : z)
+        for (auto& stage : ch)
+            stage[0] = stage[1] = 0.0;
+}
+
+double Engine::KWeight::tick (int ch, double x) noexcept
+{
+    for (int stage = 0; stage < 2; ++stage)
+    {
+        auto& s = z[ch][stage];
+        const double y = b[stage][0] * x + s[0];
+        s[0] = b[stage][1] * x - a[stage][0] * y + s[1];
+        s[1] = b[stage][2] * x - a[stage][1] * y;
+        x = y;
+    }
+    return x;
+}
+
+double Engine::curveAutoGainDb (const ParamSnapshot& params) const noexcept
+{
+    // Estimate how much louder the curve makes typical programme: the power gain averaged
+    // over 48 log-spaced points, weighted like pink noise heard through K-weighting.
+    Prototype protos[kMaxBands];
+    double weight[kMaxBands];
+    int count = 0;
+    for (const auto& band : params.bands)
+    {
+        BandParams p = band;
+        if (hasGain (p.shape))
+            p.gainDb = std::clamp (p.gainDb * params.gainScale, -60.0, 60.0);
+        p.dyn = {};
+        if (! p.audible())
+            continue;
+        protos[count] = makePrototype (p);
+        weight[count] = p.place == Placement::Stereo ? 1.0 : 0.5;   // a one-channel band moves half the power
+        ++count;
+    }
+    if (count == 0)
+        return 0.0;
+
+    double num = 0.0, den = 0.0;
+    for (int i = 0; i < 48; ++i)
+    {
+        const double f = 20.0 * std::pow (1000.0, i / 47.0);
+        double db = 0.0;
+        for (int b = 0; b < count; ++b)
+            db += weight[b] * protos[b].magnitudeDb (f);
+        const double shelf = 4.0 / (1.0 + (1500.0 / f) * (1500.0 / f));
+        const double f4 = f * f * f * f;
+        const double w = std::pow (10.0, shelf / 10.0) * f4 / (f4 + 38.0 * 38.0 * 38.0 * 38.0);
+        num += w * std::pow (10.0, std::clamp (db, -60.0, 60.0) / 10.0);
+        den += w;
+    }
+    return std::clamp (-10.0 * std::log10 (num / den), -24.0, 24.0);
+}
+
 int Engine::oversamplingFor (int phaseMode, double sampleRate) noexcept
 {
     if (phaseMode != 1)   // only Natural oversamples
@@ -242,6 +324,9 @@ void Engine::prepare (double sampleRate, int maxBlock, int)
         d.assign (static_cast<size_t> (std::max (1, maxBlock)), 0.0);
 
     fir.prepare (sampleRate);
+    kDry.prepare (sampleRate);
+    kWet.prepare (sampleRate);
+    loudCoef = 1.0 - std::exp (-1.0 / (1.5 * sampleRate));   // about a 3 s window
     int delaySize = 256;
     while (delaySize < FirLane::latencyFor (4, sampleRate) + 16)
         delaySize <<= 1;
@@ -335,6 +420,13 @@ void Engine::reset() noexcept
     controlPhase = 0;
     fresh = true;
     modeFade = 1.0;
+    kDry.reset();
+    kWet.reset();
+    msDry = msWet = 0.0;
+    autoDb = autoTargetDb = 0.0;
+    autoMode = 0;
+    autoSeenValid = false;
+    autoCountdown = 0;
     gainL = gainTargetL;
     gainR = gainTargetR;
     bypassMix = bypassTarget;
@@ -372,7 +464,46 @@ void Engine::updateTargets (const ParamSnapshot& params, bool mono) noexcept
         dynGains[static_cast<size_t> (i)].store (static_cast<float> (bands[static_cast<size_t> (i)].dynamicGainDb()), std::memory_order_relaxed);
     }
 
-    const double g = std::pow (10.0, params.outGainDb / 20.0) * (params.invert ? -1.0 : 1.0);
+    // Auto gain.
+    if (params.autoGain != autoMode)
+    {
+        autoMode = params.autoGain;
+        autoSeenValid = false;
+        kDry.reset();
+        kWet.reset();
+        msDry = msWet = 0.0;
+        if (autoMode == 0)
+            autoTargetDb = 0.0;
+    }
+    if (autoMode == 1 && --autoCountdown <= 0)
+    {
+        // From the curve: recomputed when a band or the scale changes, at most every eighth
+        // control block.
+        autoCountdown = 8;
+        const bool same = autoSeenValid && autoSeen.bands == params.bands && autoSeen.gainScale == params.gainScale;
+        if (! same)
+        {
+            autoSeen = params;
+            autoSeenValid = true;
+            autoTargetDb = curveAutoGainDb (params);
+        }
+    }
+    else if (autoMode == 2)
+    {
+        // Loudness matched: the difference between the K-weighted level of the dry and the
+        // processed signal, frozen while the input is very quiet.
+        const double dryDb = 10.0 * std::log10 (msDry + 1.0e-20) - 0.691, wetDb = 10.0 * std::log10 (msWet + 1.0e-20) - 0.691;
+        if (dryDb > -60.0)
+            autoTargetDb = std::clamp (dryDb - wetDb, -12.0, 12.0);
+    }
+    // Curve mode settles in 50 ms, loudness mode in about 2 s.
+    const double tau = autoMode == 2 ? 2.0 : 0.05;
+    autoDb += (autoTargetDb - autoDb) * (1.0 - std::exp (-(controlLen / fs) / tau));
+    if (std::abs (autoTargetDb - autoDb) < 1.0e-4)
+        autoDb = autoTargetDb;
+    autoGainShown.store (static_cast<float> (autoDb), std::memory_order_relaxed);
+
+    const double g = std::pow (10.0, (params.outGainDb + autoDb) / 20.0) * (params.invert ? -1.0 : 1.0);
     const double pan = std::clamp (params.pan, -1.0, 1.0);
     gainTargetL = g * (pan > 0.0 ? std::cos (pan * 0.5 * std::numbers::pi) : 1.0);
     gainTargetR = g * (pan < 0.0 ? std::cos (-pan * 0.5 * std::numbers::pi) : 1.0);
@@ -384,6 +515,13 @@ void Engine::updateTargets (const ParamSnapshot& params, bool mono) noexcept
 
     if (fresh)   // first block after a reset: start settled
     {
+        if (autoMode == 1)
+        {
+            autoDb = autoTargetDb;
+            const double settled = std::pow (10.0, (params.outGainDb + autoDb) / 20.0) * (params.invert ? -1.0 : 1.0);
+            gainTargetL *= settled / g;
+            gainTargetR *= settled / g;
+        }
         gainL = gainTargetL;
         gainR = gainTargetR;
         bypassMix = bypassTarget;
@@ -599,6 +737,25 @@ void Engine::processSegment (double* const* io, int numChannels, int offset, int
             std::copy_n (dryL, n, left);
             if (right != nullptr)
                 std::copy_n (dryR, n, right);
+        }
+    }
+
+    // Loudness-matched auto gain listens to the delayed input and to the processed signal.
+    if (autoMode == 2)
+    {
+        for (int i = 0; i < n; ++i)
+        {
+            double d = kDry.tick (0, dryL[i]), w = kWet.tick (0, left[i]);
+            double dd = d * d, ww = w * w;
+            if (right != nullptr)
+            {
+                d = kDry.tick (1, dryR[i]);
+                w = kWet.tick (1, right[i]);
+                dd += d * d;
+                ww += w * w;
+            }
+            msDry += (dd - msDry) * loudCoef;
+            msWet += (ww - msWet) * loudCoef;
         }
     }
 

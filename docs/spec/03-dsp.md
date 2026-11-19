@@ -358,6 +358,8 @@ Both are unity gain for small signals. Voicing is research item R-4.
 
 ## 10. Output section
 
+Both auto gain modes are built (48 points rather than 128 for the curve estimate, recomputed at most every eighth control block; a one-channel band counts for half). Verified by the `[autogain]` unit test.
+
 - **Auto gain, Curve**: `comp = -10 log10( sum w_j 10^(H_j/10) / sum w_j )` over 128
   log-spaced points from 20 Hz to 20 kHz, `H_j` the composite static response in dB
   averaged over channels, `w_j` equal per log step times a K-weighting magnitude.

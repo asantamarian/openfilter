@@ -93,6 +93,7 @@ struct ParamSnapshot
     std::array<BandParams, kMaxBands> bands {};   // gainDb here is the raw parameter value
     int phaseMode = 0;       // 0 zero latency, 1 natural, 2 linear, 3 mixed
     int linQuality = 1;      // 0 low .. 4 max: length of the linear-phase kernel
+    int autoGain = 0;        // 0 off, 1 from the curve, 2 loudness matched
     double gainScale = 1.0;
     double outGainDb = 0.0;
     double pan = 0.0;        // -1..1

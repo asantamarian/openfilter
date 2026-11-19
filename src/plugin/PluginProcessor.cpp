@@ -32,6 +32,7 @@ OpenFilterProcessor::OpenFilterProcessor()
     deltaPtr = raw ("delta");
     phaseModePtr = raw ("phase_mode");
     linQualityPtr = raw ("lin_quality");
+    autoGainPtr = raw ("auto_gain");
     bypassParam = apvts.getParameter ("bypass");
     apvts.addParameterListener ("phase_mode", this);
     apvts.addParameterListener ("lin_quality", this);
@@ -105,6 +106,7 @@ void OpenFilterProcessor::readSnapshot (ParamSnapshot& s) const noexcept
     }
     s.phaseMode = juce::roundToInt (f (phaseModePtr));
     s.linQuality = juce::roundToInt (f (linQualityPtr));
+    s.autoGain = juce::roundToInt (f (autoGainPtr));
     s.gainScale = f (gainScalePtr) * 0.01;
     s.outGainDb = f (outGainPtr);
     s.pan = f (outPanPtr) * 0.01;

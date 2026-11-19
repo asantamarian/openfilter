@@ -28,6 +28,8 @@ int main (int argc, char** argv)
     const int b5 = processor.addBand (of::Shape::HighShelf, 9000.0, 4.0);
     processor.setBandValue (b5, "place", static_cast<float> (of::Placement::Side));
     processor.addBand (of::Shape::HighCut, 19000.0, 0.0);
+    if (auto* autoGain = processor.apvts.getParameter ("auto_gain"))
+        autoGain->setValueNotifyingHost (autoGain->getValueForText ("Curve"));
 
     // State round trip: what is saved must load back identically.
     juce::MemoryBlock first, second;

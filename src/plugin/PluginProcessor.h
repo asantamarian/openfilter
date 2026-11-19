@@ -60,6 +60,7 @@ public:
     /** True when the host has connected something to the sidechain input. */
     bool hasSidechain() const noexcept { return sidechainLive.load (std::memory_order_relaxed); }
 
+    float autoGainDb() const noexcept { return engine.autoGainDb(); }
     /** Live dynamic gain of a band in dB, for the display. */
     float dynamicGainDb (int band) const noexcept { return engine.dynamicGainDb (band); }
 
@@ -102,7 +103,7 @@ private:
     Engine engine;
     std::array<BandPtrs, kMaxBands> bandPtrs {};
     std::atomic<float>* gainScalePtr = nullptr, *outGainPtr = nullptr, *outPanPtr = nullptr,
-                      * invertPtr = nullptr, *bypassPtr = nullptr, *deltaPtr = nullptr, *phaseModePtr = nullptr, *linQualityPtr = nullptr;
+                      * invertPtr = nullptr, *bypassPtr = nullptr, *deltaPtr = nullptr, *phaseModePtr = nullptr, *linQualityPtr = nullptr, *autoGainPtr = nullptr;
     juce::AudioProcessorParameter* bypassParam = nullptr;
     std::vector<double> work[2];
     std::vector<float> tap;

@@ -38,7 +38,10 @@ private:
     std::array<juce::TextButton, OpenFilterProcessor::kNumSlots> slotButtons;
     BandTable table;
     juce::TooltipWindow tooltips { this };
-    juce::ComboBox phaseBox, qualityBox;
+    juce::ComboBox phaseBox, qualityBox, autoBox;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> autoAttachment;
+    juce::Rectangle<int> autoArea;
+    float shownAuto = 0.0f;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> phaseAttachment, qualityAttachment;
     juce::Rectangle<int> latencyArea;
     int shownLatency = -1;
