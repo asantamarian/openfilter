@@ -109,24 +109,35 @@ fit one gain by relative least squares on 24 log-spaced points up to `0.95 Nyqui
 Never clamp `B2` to `-W^2`: that puts the zeros on the unit circle and creates a
 notch the prototype does not have.
 
-**Measured accuracy at M1** (worst `|digital - analog|` up to 20 kHz where the
-prototype is above -40 dB; sample rates 44.1, 48, 96 kHz; all slopes):
+**Orientation.** For gain-type shapes only one gain direction is designed with the
+method above; the other is its exact inverse (numerator and denominator swapped).
+The direct direction is the one whose poles are lower in frequency and more
+resonant, where impulse-invariant poles are most faithful: the boost for Bell, Low
+Shelf and Flat Tilt, the cut for High Shelf and Tilt Shelf. A boost followed by the
+same cut is therefore flat to rounding error, at every sample rate.
+
+**Measured accuracy** (worst `|digital - analog|` up to 20 kHz where the prototype
+is above -40 dB; sample rates 44.1, 48, 96 kHz; all slopes):
 
 | Shape | Typical: `f0 < fs/10`, Q 0.7 to 4, ±9 dB | Every setting up to `0.46 fs`, Q 0.3 to 12, ±18 dB |
 |---|---|---|
-| Bell | 0.46 dB | 31.8 dB |
-| Low / High / Tilt Shelf | 0.39 dB | 23.2 dB |
+| Bell | 0.31 dB | 4.8 dB |
+| Low / High / Tilt Shelf | 0.35 dB | 9.7 dB |
 | Low Cut | 0.38 dB | 5.2 dB |
 | High Cut | 1.11 dB | 14.9 dB |
 | Notch | 0.75 dB | 14.9 dB |
 | Band Pass | 5.06 dB | 15.3 dB |
 | Flat Tilt | 0.35 dB | 0.72 dB |
 
+For ordinary 12 dB/oct bells and shelves (Q 0.7 to 4, ±9 dB) at 44.1/48 kHz the
+error grows with frequency: under 0.01 dB below 400 Hz, about 0.3 dB around 4 kHz,
+about 1 dB around 9 kHz and about 2 dB around 15 kHz.
+
 The original target (±0.1 dB to half Nyquist, ±0.5 dB to 0.9 Nyquist) is **not
-met**. The design is sound for 6 and 12 dB/oct shapes in the low and mid band; it
-degrades for high-order shapes and wherever a section's poles or zeros sit near or
-above Nyquist, because a two-zero numerator cannot repair an aliased denominator.
-This is research item R-6. The unit test `matched design follows the analog
+met**. The remaining error comes from the denominator: a section whose poles sit
+near or above Nyquist aliases, and a two-zero numerator cannot fully repair it.
+High Cut and Band Pass figures are dominated by deep stop-band points (-25 dB and
+below). This is research item R-6. The unit test `matched design follows the analog
 prototype` guards the figures above against regression.
 
 ## 4. Kernel: state-variable form

@@ -191,6 +191,30 @@ double DigitalDesign::magnitudeDb (double freqHz, double sampleRate) const noexc
     return 10.0 * std::log10 (std::max (m, 1.0e-30));
 }
 
+DigitalDesign designBand (const BandParams& band, double sampleRate) noexcept
+{
+    // The orientation that is designed directly is the one whose poles sit lower in
+    // frequency (and are more resonant), because impulse-invariant poles are most faithful
+    // there: the boost for bells and low shelves, the cut for high and tilt shelves. The
+    // opposite gain is that design inverted.
+    const bool directIsCut = band.shape == Shape::HighShelf || band.shape == Shape::TiltShelf;
+    if (! hasGain (band.shape) || band.gainDb == 0.0 || (band.gainDb < 0.0) == directIsCut)
+        return designBand (makePrototype (band), sampleRate);
+
+    BandParams boost = band;
+    boost.gainDb = -band.gainDb;
+    auto d = designBand (makePrototype (boost), sampleRate);
+    for (int i = 0; i < d.count; ++i)
+    {
+        const auto b = d.biquads[static_cast<size_t> (i)];
+        // Invertible only if the zeros are strictly inside the unit circle.
+        if (! (b.b0 > 0.0 && std::abs (b.b2) < b.b0 * 0.999999 && std::abs (b.b1) < (b.b0 + b.b2) * 0.999999))
+            return designBand (makePrototype (band), sampleRate);
+        d.biquads[static_cast<size_t> (i)] = { 1.0 / b.b0, b.a1 / b.b0, b.a2 / b.b0, b.b1 / b.b0, b.b2 / b.b0 };
+    }
+    return d;
+}
+
 DigitalDesign designBand (const Prototype& proto, double sampleRate) noexcept
 {
     DigitalDesign d;

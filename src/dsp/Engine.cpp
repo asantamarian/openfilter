@@ -120,7 +120,7 @@ void BandProcessor::update (const BandParams& target, bool mono) noexcept
         p.freq = std::exp (logFreq);
         p.gainDb = gainDb;
         p.q = std::exp (logQ);
-        const auto design = designBand (makePrototype (p), fs);
+        const auto design = designBand (p, fs);
         std::array<SvfCoeffs, kMaxSections> coeffs;
         for (int i = 0; i < design.count; ++i)
             coeffs[static_cast<size_t> (i)] = toSvf (design.biquads[static_cast<size_t> (i)]);

@@ -35,4 +35,9 @@ struct DigitalDesign
 };
 
 DigitalDesign designBand (const Prototype& proto, double sampleRate) noexcept;
+
+/** Designs a whole band. For gain-type shapes one gain direction is designed directly and
+    the other is its exact inverse, so a boost followed by the same cut is flat by
+    construction. */
+DigitalDesign designBand (const BandParams& band, double sampleRate) noexcept;
 } // namespace of

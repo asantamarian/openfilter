@@ -23,7 +23,7 @@ const char* shapeName (Shape s)
 double worstError (const BandParams& p, double fs)
 {
     const auto proto = makePrototype (p);
-    const auto dig = designBand (proto, fs);
+    const auto dig = designBand (p, fs);
     double worst = 0.0;
     const double top = std::min (0.45 * fs, 20000.0);
     for (int i = 0; i < 300; ++i)
@@ -124,8 +124,8 @@ TEST_CASE ("matched design follows the analog prototype", "[design]")
     // +-0.1 dB is not met yet: see research item R-6 in docs/spec/03-dsp.md.
     //   typical: q 0.7..4, 9 dB, band frequency below fs/10  -> per-shape limit below
     //   any:     every setting up to 0.46 fs                 -> never grossly wrong
-    const double typicalLimit[kNumShapes] = { 0.6, 0.6, 0.6, 0.6, 1.5, 1.0, 6.0, 0.6, 0.5, 0.01 };
-    const double anyLimit = 35.0;
+    const double typicalLimit[kNumShapes] = { 0.4, 0.45, 0.45, 0.5, 1.5, 1.0, 6.0, 0.45, 0.5, 0.01 };
+    const double anyLimit[kNumShapes] = { 6.0, 12.0, 12.0, 7.0, 18.0, 18.0, 18.0, 12.0, 1.0, 0.01 };
     double typical[kNumShapes] {}, any[kNumShapes] {};
 
     for (int shape = 0; shape < kNumShapes; ++shape)
@@ -149,8 +149,25 @@ TEST_CASE ("matched design follows the analog prototype", "[design]")
         std::printf ("  %-10s worst error: %6.3f dB typical, %6.3f dB over every setting\n",
                      shapeName (static_cast<Shape> (shape)), typical[shape], any[shape]);
         CHECK (typical[shape] < typicalLimit[shape]);
-        CHECK (any[shape] < anyLimit);
+        CHECK (any[shape] < anyLimit[shape]);
     }
+}
+
+TEST_CASE ("matched design: a boost followed by the same cut is flat", "[design]")
+{
+    for (auto shape : { Shape::Bell, Shape::LowShelf, Shape::HighShelf, Shape::TiltShelf, Shape::FlatTilt })
+        for (auto slope : { Slope::S6, Slope::S12, Slope::S24, Slope::S96 })
+            for (double fs : { 44100.0, 96000.0 })
+                for (double f0 : { 40.0, 1000.0, 9000.0, 18000.0 })
+                    for (double q : { 0.3, 1.0, 8.0 })
+                    {
+                        BandParams up { true, true, shape, slope, Placement::Stereo, f0, 14.0, q };
+                        BandParams down = up;
+                        down.gainDb = -14.0;
+                        const auto a = designBand (up, fs), b = designBand (down, fs);
+                        for (double f = 20.0; f < 0.49 * fs; f *= 1.7)
+                            REQUIRE_THAT (a.magnitudeDb (f, fs) + b.magnitudeDb (f, fs), WithinAbs (0.0, 1.0e-4));
+                    }
 }
 
 TEST_CASE ("matched design: digital notch is a true null, digital designs are stable", "[design]")
