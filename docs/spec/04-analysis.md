@@ -123,6 +123,15 @@ row. Constants are *(tune)*.
 
 ## 3. EQ match and sketch
 
+**Built** (`src/match/CurveFitter`, `src/ui/MatchPanel`). Differences from the text
+below: the fitter runs on the message thread (it takes a few milliseconds), the
+band count is a drop-down of 3 to 24 rather than a slider, the fitted curve is not
+previewed live (the panel shows the target and the fit error), and a reference
+cannot yet be taken from another instance. Applying a match or a sketch replaces
+all bands in one undo step. Verified by `tests/unit/fit_tests.cpp` (a six-band
+curve recovered to 0.01 dB RMS) and by the snapshot tool, which captures a
+spectrum through the analyzer path and recovers a known difference to 0.02 dB.
+
 Both produce a **target curve** `D(f)` in dB on a 256-point log grid from 20 Hz to
 20 kHz and hand it to `of::CurveFitter`.
 

@@ -31,7 +31,8 @@ Milestone M1 (static EQ, zero latency) is built and M2 (full UI) is under way. B
 | Character: Tube and Iron saturation at 4x, with drive (View menu; first voicing, not yet tuned by ear) | Built (M5) |
 | Nine factory presets; analyzer speed, tilt, range and freeze; piano strip; number keys to select bands; copy, paste and duplicate bands | Built |
 | Paged dock, multi-band selection, spectrogram, full screen, embedded fonts, a dock control for the free detector filter | Not yet |
-| Instance linking, EQ match, CLAP, accessibility pass (M6, M7) | Not yet |
+| EQ match (reference from the sidechain or an audio file) and curve sketching, on a shared curve fitter; sidechain trace in the analyzer | Built (M6) |
+| Instance hub and collision view (M6); CLAP, accessibility pass, MIDI learn, themes, installers (M7) | Not yet |
 
 Known gaps:
 

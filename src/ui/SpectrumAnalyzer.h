@@ -30,6 +30,13 @@ public:
     void setReleasePerSecond (float db) noexcept { release = db; }
     void clear();
 
+    /** Long-term average, for EQ match: starts collecting, and reads it back in dB (no tilt). */
+    void startAveraging();
+    void stopAveraging() noexcept { averaging = false; }
+    bool isAveraging() const noexcept { return averaging; }
+    double averagedSeconds() const noexcept { return fs > 0.0 ? averagedFrames * static_cast<double> (hop) / fs : 0.0; }
+    double averageDb (double freqHz) const noexcept;
+
     static constexpr float kFloorDb = -140.0f;
 
 private:
@@ -43,5 +50,8 @@ private:
     std::vector<float> window, ring, work, levels, scratch;
     int ringPos = 0, sinceFrame = 0;
     float tilt = 4.5f, release = 12.0f;
+    std::vector<double> averagePower;
+    int averagedFrames = 0;
+    bool averaging = false;
 };
 } // namespace of

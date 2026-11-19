@@ -3,6 +3,7 @@
 #include "PluginProcessor.h"
 #include "ui/BandDock.h"
 #include "ui/BandTable.h"
+#include "ui/MatchPanel.h"
 #include "ui/ResponseDisplay.h"
 
 namespace of
@@ -19,6 +20,7 @@ public:
     /** For tools and tests. */
     ResponseDisplay& responseDisplay() noexcept { return display; }
     void updateNow() { timerCallback(); }
+    void showMatchPanel (bool show) { matchPanel.setVisible (show); }
 
 private:
     void timerCallback() override;
@@ -37,6 +39,7 @@ private:
     juce::TextButton presetButton, viewButton { "View" };
     std::array<juce::TextButton, OpenFilterProcessor::kNumSlots> slotButtons;
     BandTable table;
+    MatchPanel matchPanel;
     juce::TooltipWindow tooltips { this };
     juce::ComboBox phaseBox, qualityBox, autoBox;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> autoAttachment;

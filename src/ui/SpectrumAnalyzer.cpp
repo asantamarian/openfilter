@@ -27,8 +27,28 @@ void SpectrumAnalyzer::setSampleRate (double sampleRate)
     ring.assign (static_cast<size_t> (size), 0.0f);
     work.assign (static_cast<size_t> (2 * size), 0.0f);
     levels.assign (static_cast<size_t> (bins), kFloorDb);
+    averagePower.assign (static_cast<size_t> (bins), 0.0);
+    averagedFrames = 0;
+    averaging = false;
     ringPos = sinceFrame = 0;
     fifo.clear();
+}
+
+void SpectrumAnalyzer::startAveraging()
+{
+    std::fill (averagePower.begin(), averagePower.end(), 0.0);
+    averagedFrames = 0;
+    averaging = true;
+}
+
+double SpectrumAnalyzer::averageDb (double freqHz) const noexcept
+{
+    if (averagedFrames <= 0)
+        return -200.0;
+    const double pos = juce::jlimit (1.0, bins - 2.0, freqHz * size / fs);
+    const auto lo = static_cast<size_t> (pos);
+    const double t = pos - static_cast<double> (lo);
+    return 10.0 * std::log10 ((averagePower[lo] * (1.0 - t) + averagePower[lo + 1] * t) / averagedFrames + 1.0e-20);
 }
 
 void SpectrumAnalyzer::clear()
@@ -78,8 +98,12 @@ void SpectrumAnalyzer::analyseFrame()
 
     // A full-scale sine reads 0 dB: Hann has a coherent gain of 0.5.
     const float norm = 4.0f / static_cast<float> (size);
+    if (averaging)
+        ++averagedFrames;
     for (int k = 1; k < bins; ++k)
     {
+        if (averaging)
+            averagePower[static_cast<size_t> (k)] += static_cast<double> (work[static_cast<size_t> (k)] * norm) * (work[static_cast<size_t> (k)] * norm);
         const float db = juce::Decibels::gainToDecibels (work[static_cast<size_t> (k)] * norm, kFloorDb);
         auto& level = levels[static_cast<size_t> (k)];
         level = juce::jmax (level, db);   // instant attack

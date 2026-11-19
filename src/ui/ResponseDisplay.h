@@ -2,6 +2,7 @@
 
 #include "SpectrumAnalyzer.h"
 #include "Theme.h"
+#include "match/CurveFitter.h"
 #include "plugin/PluginProcessor.h"
 
 namespace of
@@ -27,6 +28,18 @@ public:
     /** speed in dB per second of release; tilt in dB per octave; range in dB below 0 dBFS. */
     void setAnalyzerOptions (float releasePerSecond, float tiltPerOctave, int rangeDb, bool frozen);
     void setPianoStrip (bool show);
+
+    // EQ match: long-term spectra of this track (the plugin input) or the sidechain.
+    void startCapture (bool sidechain);
+    /** Stops and writes the spectrum to the grid. False if under a second was captured. */
+    bool finishCapture (bool sidechain, fit::Curve& out);
+    double captureSeconds (bool sidechain) const noexcept;
+    /** A dashed target curve over the display; nullptr removes it. */
+    void setTargetCurve (const fit::Curve* target);
+
+    /** Curve sketching: the next drag draws a curve, which is fitted with this many bands. */
+    void beginSketch (int numBands);
+    bool sketching() const noexcept { return sketchBands > 0; }
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -64,7 +77,12 @@ private:
     juce::Path compositePath, selectedPath, selectedFill, rangePath;
     std::array<float, kMaxBands> liveDyn {};
 
-    SpectrumAnalyzer preAnalyzer, postAnalyzer;
+    SpectrumAnalyzer preAnalyzer, postAnalyzer, scAnalyzer;
+    juce::Path scLine, targetPath, sketchPath;
+    fit::Curve targetCurve {};
+    bool hasTarget = false;
+    int sketchBands = 0;
+    std::vector<juce::Point<float>> sketchPoints;
     juce::Path preFill, postLine;
     std::vector<float> spectrumPoints, spectrumSmooth;
     juce::uint32 lastUpdateMs = 0;

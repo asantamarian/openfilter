@@ -2,6 +2,7 @@
 //   of_snapshot out.png
 #include "plugin/PluginEditor.h"
 #include "plugin/Presets.h"
+#include "match/CurveFitter.h"
 
 int main (int argc, char** argv)
 {
@@ -160,6 +161,65 @@ int main (int argc, char** argv)
         e->updateNow();   // what the 30 Hz timer would do
     }
 
+    // EQ match, end to end: capture this track through the analyzer path while audio runs,
+    // make a reference that differs from it by a known EQ, and the match must find that EQ.
+    bool matchOk = false;
+    if (auto* e = dynamic_cast<of::OpenFilterEditor*> (editor.get()))
+    {
+        auto& display = e->responseDisplay();
+        display.startCapture (false);
+        for (int block = 0; block < 400; ++block)
+        {
+            for (int i = 0; i < 512; ++i)
+            {
+                pink = 0.985f * pink + 0.06f * (random.nextFloat() * 2.0f - 1.0f);
+                buffer.setSample (0, i, pink);
+                buffer.setSample (1, i, pink);
+            }
+            processor.processBlock (buffer, midi);
+            if (block % 4 == 3)
+                e->updateNow();
+        }
+        of::fit::Curve source {};
+        const bool captured = display.finishCapture (false, source);
+
+        of::BandParams shelf, bell;
+        shelf.used = bell.used = true;
+        shelf.shape = of::Shape::HighShelf;  shelf.freq = 6000.0;  shelf.gainDb = 5.0;  shelf.q = 0.9;
+        bell.shape = of::Shape::Bell;        bell.freq = 400.0;    bell.gainDb = -4.0;  bell.q = 1.2;
+        const auto difference = of::fit::evaluate ({ shelf, bell });
+        auto reference = source;
+        for (int i = 0; i < of::fit::kGridSize; ++i)
+            reference[static_cast<size_t> (i)] += difference[static_cast<size_t> (i)] + 7.0;   // and 7 dB louder, which must not matter
+
+        const auto target = of::fit::matchTarget (source, reference);
+        const auto fitted = of::fit::fitCurve (target, 5);
+        // Compare shapes: the match removes the overall level, so remove it from the truth too.
+        auto truth = difference;
+        double level = 0.0;
+        int n = 0;
+        for (int i = 0; i < of::fit::kGridSize; ++i)
+            if (of::fit::gridFrequency (i) >= 200.0 && of::fit::gridFrequency (i) <= 5000.0) { level += truth[static_cast<size_t> (i)]; ++n; }
+        for (auto& v : truth)
+            v -= level / n;
+        const double error = of::fit::rmsError (truth, of::fit::evaluate (fitted));
+        matchOk = captured && error < 0.6 && ! fitted.empty();
+        std::printf ("EQ match end to end: %s (captured %.1f s, %d bands, %.2f dB RMS from the true difference)\n",
+                     matchOk ? "ok" : "WRONG", display.captureSeconds (false), static_cast<int> (fitted.size()), error);
+
+        display.setTargetCurve (&target);
+        e->showMatchPanel (true);
+        e->updateNow();
+        const auto matchFile = out.getSiblingFile (out.getFileNameWithoutExtension() + "-match.png");
+        matchFile.deleteFile();
+        juce::FileOutputStream matchStream (matchFile);
+        if (matchStream.openedOk())
+            juce::PNGImageFormat().writeImageToStream (editor->createComponentSnapshot (editor->getLocalBounds(), false, 1.0f), matchStream);
+        e->showMatchPanel (false);
+        display.setTargetCurve (nullptr);
+        e->updateNow();
+    }
+
     const auto image = editor->createComponentSnapshot (editor->getLocalBounds(), false, 1.0f);
     out.deleteFile();
     juce::FileOutputStream stream (out);
@@ -184,5 +244,5 @@ int main (int argc, char** argv)
         && juce::PNGImageFormat().writeImageToStream (editor->createComponentSnapshot (editor->getLocalBounds(), false, 1.0f), tableStream);
     std::printf ("%s %s\n", tableWritten ? "wrote" : "FAILED to write", tableFile.getFullPathName().toRawUTF8());
 
-    return written && tableWritten && roundTrip && presetOk && parseOk && slotsOk && factoryOk ? 0 : 1;
+    return written && tableWritten && roundTrip && presetOk && parseOk && slotsOk && factoryOk && matchOk ? 0 : 1;
 }

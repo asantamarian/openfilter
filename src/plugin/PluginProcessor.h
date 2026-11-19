@@ -51,6 +51,8 @@ public:
     /** Uses the lowest free slot. Returns its index, or -1 when all 32 are used. */
     int addBand (Shape shape, double freq, double gainDb);
     void removeBand (int band);
+    /** Replaces every band with these (one undo step), for EQ match and curve sketching. */
+    void replaceBands (const std::vector<BandParams>& bands, const juce::String& actionName);
     void setBandValue (int band, const char* suffix, float plainValue);
 
     float takePeak (int channel) noexcept { return engine.takePeak (channel); }
@@ -65,7 +67,7 @@ public:
     float dynamicGainDb (int band) const noexcept { return engine.dynamicGainDb (band); }
 
     // Analyzer taps (mono sum), written by the audio thread only while an editor is open.
-    SpscFifo preFifo, postFifo;
+    SpscFifo preFifo, postFifo, scFifo;
     std::atomic<bool> analyzerActive { false };
 
     juce::UndoManager undo;

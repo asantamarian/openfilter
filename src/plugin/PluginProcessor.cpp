@@ -193,7 +193,16 @@ void OpenFilterProcessor::process (juce::AudioBuffer<Sample>& buffer)
             }
 
         if (analyse)
+        {
             pushTap (preFifo);
+            if (scUsable)   // the sidechain as the analyzer and EQ match see it
+            {
+                for (int i = 0; i < n; ++i)
+                    tap[static_cast<size_t> (i)] = static_cast<float> (scChannels > 1 ? 0.5 * (scWork[0][static_cast<size_t> (i)] + scWork[1][static_cast<size_t> (i)])
+                                                                                     : scWork[0][static_cast<size_t> (i)]);
+                scFifo.push (tap.data(), static_cast<size_t> (n));
+            }
+        }
         engine.process (io, channels, n, snapshot, scUsable ? sc : nullptr, scUsable ? scChannels : 0);
         if (analyse)
             pushTap (postFifo);
@@ -401,6 +410,34 @@ int OpenFilterProcessor::addBand (Shape shape, double freq, double gainDb)
         return b;
     }
     return -1;
+}
+
+void OpenFilterProcessor::replaceBands (const std::vector<BandParams>& bands, const juce::String& actionName)
+{
+    undo.beginNewTransaction (actionName);
+    for (int b = 0; b < kMaxBands; ++b)
+    {
+        // Everything back to defaults first, so nothing of the old band lingers.
+        for (const char* suffix : { "on", "shape", "slope", "freq", "gain", "q", "place", "lin", "dyn", "range", "thr", "athr",
+                                    "ratio", "knee", "atk", "rel", "trig", "sc", "scfree", "scfreq", "scq", "smode", "sres" })
+            if (auto* p = bandParam (b, suffix))
+                if (! juce::approximatelyEqual (p->getValue(), p->getDefaultValue()))
+                    p->setValueNotifyingHost (p->getDefaultValue());
+
+        const bool present = b < static_cast<int> (bands.size());
+        if (present)
+        {
+            const auto& src = bands[static_cast<size_t> (b)];
+            setBandValue (b, "shape", static_cast<float> (src.shape));
+            setBandValue (b, "slope", static_cast<float> (src.slope));
+            setBandValue (b, "freq", static_cast<float> (src.freq));
+            setBandValue (b, "gain", static_cast<float> (src.gainDb));
+            setBandValue (b, "q", static_cast<float> (src.q));
+            setBandValue (b, "place", static_cast<float> (src.place));
+        }
+        setBandValue (b, "used", present ? 1.0f : 0.0f);
+    }
+    presetName = {};
 }
 
 void OpenFilterProcessor::removeBand (int band)

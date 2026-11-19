@@ -19,7 +19,7 @@ bool sameBand (const BandParams& a, const BandParams& b)
 } // namespace
 
 ResponseDisplay::ResponseDisplay (OpenFilterProcessor& p)
-    : processor (p), preAnalyzer (p.preFifo), postAnalyzer (p.postFifo)
+    : processor (p), preAnalyzer (p.preFifo), postAnalyzer (p.postFifo), scAnalyzer (p.scFifo)
 {
     processor.analyzerActive = true;
     setWantsKeyboardFocus (true);
@@ -133,7 +133,11 @@ void ResponseDisplay::refresh()
         processor.postFifo.clear();
         return;
     }
-    const bool preLive = analyzerVisible && preAnalyzer.update (elapsed), postLive = analyzerVisible && postAnalyzer.update (elapsed);
+    scAnalyzer.setSampleRate (processor.getSampleRate());
+    const bool scLive = analyzerVisible && scAnalyzer.update (elapsed) && processor.hasSidechain();
+    if (scLive != ! scLine.isEmpty())
+        repaint();
+    const bool preLive = (analyzerVisible && preAnalyzer.update (elapsed)) || scLive, postLive = analyzerVisible && postAnalyzer.update (elapsed);
     if (preLive || postLive || spectraShown)
     {
         spectraShown = preLive || postLive;
@@ -146,6 +150,7 @@ void ResponseDisplay::rebuildSpectra()
 {
     preFill.clear();
     postLine.clear();
+    scLine.clear();
     const int w = getWidth();
     if (w <= 0 || ! spectraShown)
         return;
@@ -187,6 +192,16 @@ void ResponseDisplay::rebuildSpectra()
         const float y = toY (spectrumSmooth[static_cast<size_t> (i)]);
         if (i == 0) postLine.startNewSubPath (0.0f, y); else postLine.lineTo (static_cast<float> (i * step), y);
     }
+
+    if (processor.hasSidechain())
+    {
+        trace (scAnalyzer);
+        for (int i = 0; i < count; ++i)
+        {
+            const float y = toY (spectrumSmooth[static_cast<size_t> (i)]);
+            if (i == 0) scLine.startNewSubPath (0.0f, y); else scLine.lineTo (static_cast<float> (i * step), y);
+        }
+    }
 }
 
 void ResponseDisplay::selectBand (int band)
@@ -213,7 +228,7 @@ void ResponseDisplay::setRangeDb (double range)
 
 void ResponseDisplay::setAnalyzerOptions (float releasePerSecond, float tiltPerOctave, int rangeDb, bool frozen)
 {
-    for (auto* a : { &preAnalyzer, &postAnalyzer })
+    for (auto* a : { &preAnalyzer, &postAnalyzer, &scAnalyzer })
     {
         a->setReleasePerSecond (releasePerSecond);
         a->setTiltPerOctave (tiltPerOctave);
@@ -226,6 +241,39 @@ void ResponseDisplay::setAnalyzerOptions (float releasePerSecond, float tiltPerO
     }
     analyzerFrozen = frozen;
     rebuildSpectra();
+    repaint();
+}
+
+void ResponseDisplay::startCapture (bool sidechain) { (sidechain ? scAnalyzer : preAnalyzer).startAveraging(); }
+
+double ResponseDisplay::captureSeconds (bool sidechain) const noexcept { return (sidechain ? scAnalyzer : preAnalyzer).averagedSeconds(); }
+
+bool ResponseDisplay::finishCapture (bool sidechain, fit::Curve& out)
+{
+    auto& analyzer = sidechain ? scAnalyzer : preAnalyzer;
+    analyzer.stopAveraging();
+    if (analyzer.averagedSeconds() < 1.0)
+        return false;
+    for (int i = 0; i < fit::kGridSize; ++i)
+        out[static_cast<size_t> (i)] = analyzer.averageDb (fit::gridFrequency (i));
+    return true;
+}
+
+void ResponseDisplay::setTargetCurve (const fit::Curve* target)
+{
+    hasTarget = target != nullptr;
+    if (hasTarget)
+        targetCurve = *target;
+    rebuildCurves();
+    repaint();
+}
+
+void ResponseDisplay::beginSketch (int numBands)
+{
+    sketchBands = numBands;
+    sketchPoints.clear();
+    sketchPath.clear();
+    setMouseCursor (juce::MouseCursor::CrosshairCursor);
     repaint();
 }
 
@@ -252,6 +300,13 @@ void ResponseDisplay::rebuildCurves()
     selectedPath.clear();
     selectedFill.clear();
     rangePath.clear();
+    targetPath.clear();
+    if (hasTarget)
+        for (int i = 0; i < fit::kGridSize; ++i)
+        {
+            const float x = freqToX (fit::gridFrequency (i)), y = dbToY (targetCurve[static_cast<size_t> (i)]);
+            if (i == 0) targetPath.startNewSubPath (x, y); else targetPath.lineTo (x, y);
+        }
     const int w = getWidth();
     if (w <= 0)
         return;
@@ -371,6 +426,11 @@ void ResponseDisplay::paint (juce::Graphics& g)
             g.strokePath (postLine, juce::PathStrokeType (5.0f));
             g.setColour (theme::accent.withAlpha (0.75f));
             g.strokePath (postLine, juce::PathStrokeType (1.2f));
+            if (! scLine.isEmpty())   // the sidechain, in the warning colour
+            {
+                g.setColour (theme::warn.withAlpha (0.6f));
+                g.strokePath (scLine, juce::PathStrokeType (1.0f));
+            }
         }
 
         // Selected band: fill and outline in its colour.
@@ -389,6 +449,18 @@ void ResponseDisplay::paint (juce::Graphics& g)
                 g.fillPath (dashed);
             }
         }
+
+        // EQ match target and the curve being sketched.
+        if (! targetPath.isEmpty())
+        {
+            juce::Path dashed;
+            const float dashes[] = { 6.0f, 5.0f };
+            juce::PathStrokeType (1.6f).createDashedStroke (dashed, targetPath, dashes, 2);
+            g.setColour (theme::warn);
+            g.fillPath (dashed);
+        }
+        if (! sketchPath.isEmpty())
+            theme::strokeGlow (g, sketchPath, theme::warn, 2.0f);
 
         // Composite curve: a white-hot core inside an accent halo.
         theme::strokeGlow (g, compositePath, theme::accent, 2.6f, 1.4f);
@@ -537,6 +609,13 @@ void ResponseDisplay::mouseExit (const juce::MouseEvent&)
 void ResponseDisplay::mouseDown (const juce::MouseEvent& e)
 {
     grabKeyboardFocus();
+    if (sketching())
+    {
+        sketchPoints.assign (1, e.position);
+        sketchPath.clear();
+        sketchPath.startNewSubPath (e.position);
+        return;
+    }
     const int band = bandAt (e.position);
     selectBand (band);
     if (band < 0)
@@ -565,6 +644,16 @@ void ResponseDisplay::mouseDown (const juce::MouseEvent& e)
 
 void ResponseDisplay::mouseDrag (const juce::MouseEvent& e)
 {
+    if (sketching())
+    {
+        if (! sketchPoints.empty())
+        {
+            sketchPoints.push_back (e.position);
+            sketchPath.lineTo (e.position);
+            repaint();
+        }
+        return;
+    }
     if (dragging < 0)
         return;
     auto p = e.position + dragOffset;
@@ -590,10 +679,48 @@ void ResponseDisplay::endDrag()
     dragging = -1;
 }
 
-void ResponseDisplay::mouseUp (const juce::MouseEvent&) { endDrag(); }
+void ResponseDisplay::mouseUp (const juce::MouseEvent&)
+{
+    if (sketching())
+    {
+        const int numBands = sketchBands;
+        sketchBands = 0;
+        setMouseCursor (juce::MouseCursor::NormalCursor);
+        if (sketchPoints.size() >= 4)
+        {
+            // Left to right, then onto the grid: between drawn points interpolate, outside them
+            // hold the nearest end.
+            std::sort (sketchPoints.begin(), sketchPoints.end(), [] (auto a, auto b) { return a.x < b.x; });
+            fit::Curve drawn {};
+            size_t at = 0;
+            for (int i = 0; i < fit::kGridSize; ++i)
+            {
+                const float x = freqToX (fit::gridFrequency (i));
+                while (at + 1 < sketchPoints.size() && sketchPoints[at + 1].x < x)
+                    ++at;
+                float y = sketchPoints[at].y;
+                if (x <= sketchPoints.front().x)       y = sketchPoints.front().y;
+                else if (x >= sketchPoints.back().x)   y = sketchPoints.back().y;
+                else if (at + 1 < sketchPoints.size() && sketchPoints[at + 1].x > sketchPoints[at].x)
+                    y = juce::jmap (x, sketchPoints[at].x, sketchPoints[at + 1].x, sketchPoints[at].y, sketchPoints[at + 1].y);
+                const double s = std::abs (scale) > 1.0e-6 ? scale : 1.0;
+                drawn[static_cast<size_t> (i)] = juce::jlimit (-24.0, 24.0, yToDb (y) / s);
+            }
+            processor.replaceBands (fit::fitCurve (fit::smooth (drawn, 1.0 / 6.0), numBands), "Sketch curve");
+        }
+        sketchPoints.clear();
+        sketchPath.clear();
+        refresh();
+        repaint();
+        return;
+    }
+    endDrag();
+}
 
 void ResponseDisplay::mouseDoubleClick (const juce::MouseEvent& e)
 {
+    if (sketching())
+        return;
     const int band = bandAt (e.position);
     if (band >= 0)
     {

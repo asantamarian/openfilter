@@ -28,6 +28,7 @@ add_library(of_dsp STATIC
   src/dsp/kernel/ChannelFilter.cpp
   src/dsp/lanes/FirLane.cpp
   src/dsp/lanes/SpectralLane.cpp
+  src/match/CurveFitter.cpp
   src/dsp/Engine.cpp)
 target_include_directories(of_dsp PUBLIC src)
 target_compile_options(of_dsp PRIVATE ${OF_WARNINGS})
@@ -74,6 +75,7 @@ if(OF_BUILD_PLUGIN)
     src/ui/SpectrumAnalyzer.cpp
     src/ui/BandDock.cpp
     src/ui/BandTable.cpp
+    src/ui/MatchPanel.cpp
     src/ui/Dial.cpp)
   target_include_directories(OpenFilterEQ PRIVATE src)
   target_compile_definitions(OpenFilterEQ PUBLIC
@@ -82,7 +84,7 @@ if(OF_BUILD_PLUGIN)
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0)
   target_link_libraries(OpenFilterEQ
-    PRIVATE of_dsp juce::juce_audio_utils juce::juce_dsp
+    PRIVATE of_dsp juce::juce_audio_utils juce::juce_audio_formats juce::juce_dsp
     PUBLIC  juce::juce_recommended_config_flags
             juce::juce_recommended_warning_flags)
 
@@ -121,7 +123,8 @@ if(OF_BUILD_TESTS)
     tests/unit/dynamics_tests.cpp
     tests/unit/linear_tests.cpp
     tests/unit/spectral_tests.cpp
-    tests/unit/character_tests.cpp)
+    tests/unit/character_tests.cpp
+    tests/unit/fit_tests.cpp)
   target_link_libraries(of_tests PRIVATE of_dsp Catch2::Catch2WithMain)
   add_test(NAME of_tests COMMAND of_tests)
 endif()
