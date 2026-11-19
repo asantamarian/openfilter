@@ -61,6 +61,7 @@ public:
 
     // Editor size, kept in the session state.
     int editorWidth = 1280, editorHeight = 800;
+    juce::String presetName;   // empty until a preset is loaded or saved
 
 private:
     struct BandPtrs { std::atomic<float>* used, *on, *shape, *slope, *freq, *gain, *q, *place; };

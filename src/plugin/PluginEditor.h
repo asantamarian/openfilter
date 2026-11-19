@@ -22,12 +22,15 @@ public:
 private:
     void timerCallback() override;
     void paintMeter (juce::Graphics&);
+    void showPresetMenu();
 
     OpenFilterProcessor& processor;
     juce::LookAndFeel_V4 look;
     ResponseDisplay display;
     BandDock dock;
     Dial outputDial { "Out" };
+    juce::TextButton presetButton;
+    std::unique_ptr<juce::FileChooser> chooser;
     juce::TextButton undoButton { "Undo" }, redoButton { "Redo" }, bypassButton { "Bypass" }, deltaButton { "Delta" };
     juce::AudioProcessorValueTreeState::ButtonAttachment bypassAttachment, deltaAttachment;
     juce::Rectangle<int> topBar, outputColumn, meterArea;

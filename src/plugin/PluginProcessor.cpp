@@ -135,6 +135,7 @@ void OpenFilterProcessor::getStateInformation (juce::MemoryBlock& dest)
     juce::ValueTree ui ("Ui");
     ui.setProperty ("width", editorWidth, nullptr);
     ui.setProperty ("height", editorHeight, nullptr);
+    ui.setProperty ("preset", presetName, nullptr);
     root.appendChild (ui, nullptr);
 
     juce::MemoryOutputStream stream (dest, false);
@@ -166,6 +167,7 @@ void OpenFilterProcessor::setStateInformation (const void* data, int size)
     {
         editorWidth = juce::jlimit (800, 8000, static_cast<int> (ui.getProperty ("width", 1280)));
         editorHeight = juce::jlimit (500, 8000, static_cast<int> (ui.getProperty ("height", 800)));
+        presetName = ui.getProperty ("preset", "").toString();
     }
 }
 

@@ -1,6 +1,7 @@
 // Renders the plugin editor to a PNG without a host, and round-trips the session state.
 //   of_snapshot out.png
 #include "plugin/PluginEditor.h"
+#include "plugin/Presets.h"
 
 int main (int argc, char** argv)
 {
@@ -46,6 +47,36 @@ int main (int argc, char** argv)
     std::printf ("state round trip: %s (%d bytes, %d parameters)\n", roundTrip ? "ok" : "MISMATCH",
                  static_cast<int> (first.getSize()), processor.getParameters().size());
 
+    // Preset round trip: to JSON text, into a fresh instance, and the bands must match.
+    bool presetOk = false;
+    {
+        const auto text = juce::JSON::toString (of::presets::toVar (processor, "Snapshot"));
+        juce::var parsed;
+        juce::String error;
+        of::OpenFilterProcessor fresh;
+        fresh.addBand (of::Shape::Notch, 500.0, 0.0);   // must be replaced, not merged
+        presetOk = juce::JSON::parse (text, parsed).wasOk() && of::presets::apply (fresh, parsed, error);
+        for (int b = 0; b < of::kMaxBands && presetOk; ++b)
+        {
+            const auto x = processor.readBand (b), y = fresh.readBand (b);
+            presetOk = x.used == y.used && (! x.used || (x.shape == y.shape && x.slope == y.slope && x.place == y.place
+                                                         && std::abs (x.freq - y.freq) < 1.0e-3 * x.freq && std::abs (x.gainDb - y.gainDb) < 1.0e-3 && std::abs (x.q - y.q) < 1.0e-3));
+        }
+        juce::String rejected;
+        presetOk = presetOk && ! of::presets::apply (fresh, juce::var ("nonsense"), rejected) && rejected.isNotEmpty();
+        std::printf ("preset round trip: %s (%d characters of JSON)\n", presetOk ? "ok" : "MISMATCH", text.length());
+    }
+
+    // Typed frequency entry.
+    const auto near = [] (double a, double b) { return std::abs (a - b) < 1.0e-6 * juce::jmax (1.0, b); };
+    using of::params::parseFrequency;
+    const bool parseOk = near (parseFrequency ("850"), 850.0) && near (parseFrequency ("850 Hz"), 850.0) && near (parseFrequency ("1.2k"), 1200.0)
+                      && near (parseFrequency ("1k2"), 1200.0) && near (parseFrequency ("3.20 kHz"), 3200.0) && near (parseFrequency ("A4"), 440.0)
+                      && near (parseFrequency ("a3"), 220.0) && near (parseFrequency ("C4"), 261.6255653005986) && near (parseFrequency ("Bb3"), 233.0818807590449)
+                      && near (parseFrequency ("C#5"), 554.3652619537442) && near (parseFrequency ("A4+100"), 466.1637615180899) && near (parseFrequency ("B2"), 123.47082531403103)
+                      && near (parseFrequency ("hello"), 0.0) && near (parseFrequency (""), 0.0);
+    std::printf ("frequency parsing: %s\n", parseOk ? "ok" : "WRONG");
+
     std::unique_ptr<juce::AudioProcessorEditor> editor (processor.createEditor());
 
     // Run some audio through so the meters and the analyzer show something: pink-ish noise
@@ -77,5 +108,5 @@ int main (int argc, char** argv)
     juce::FileOutputStream stream (out);
     const bool written = stream.openedOk() && juce::PNGImageFormat().writeImageToStream (image, stream);
     std::printf ("%s %s (%d x %d)\n", written ? "wrote" : "FAILED to write", out.getFullPathName().toRawUTF8(), image.getWidth(), image.getHeight());
-    return written && roundTrip ? 0 : 1;
+    return written && roundTrip && presetOk && parseOk ? 0 : 1;
 }

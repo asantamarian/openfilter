@@ -62,6 +62,7 @@ if(OF_BUILD_PLUGIN)
 
   target_sources(OpenFilterEQ PRIVATE
     src/plugin/Parameters.cpp
+    src/plugin/Presets.cpp
     src/plugin/PluginProcessor.cpp
     src/plugin/PluginEditor.cpp
     src/ui/ResponseDisplay.cpp

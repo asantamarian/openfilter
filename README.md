@@ -9,7 +9,7 @@ product; it is used only as a feature benchmark.
 
 ## Status
 
-Milestone M1 (static EQ, zero latency) is built. Build order is in
+Milestone M1 (static EQ, zero latency) is built and M2 (full UI) is under way. Build order is in
 `docs/spec/07-build-test-release.md`.
 
 | Part | State |
@@ -18,7 +18,8 @@ Milestone M1 (static EQ, zero latency) is built. Build order is in
 | DSP core (`src/dsp`): prototypes, matched design, filter kernel, engine | Built, unit tests pass |
 | Plugin (`src/plugin`): 781 parameters, processor, session state | Built; VST3, LV2 and Standalone on Linux |
 | Editor (`src/ui`): response display with draggable bands, band dock, output meter | Built, first version |
-| Analyzer, presets, dynamics, linear phase, CLAP, and the rest of M2 to M7 | Not yet |
+| Spectrum analyzer (input and output), JSON presets, typed values with note names | Built (first part of M2) |
+| Rest of M2 (band table, A/B/C/D, UI scaling, history), dynamics, linear phase, CLAP, M3 to M7 | Not yet |
 
 Known gaps:
 

@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "Presets.h"
 
 namespace of
 {
@@ -46,7 +47,9 @@ OpenFilterEditor::OpenFilterEditor (OpenFilterProcessor& p)
     deltaButton.setClickingTogglesState (true);
     undoButton.onClick = [this] { processor.undo.undo(); };
     redoButton.onClick = [this] { processor.undo.redo(); };
-    for (auto* b : { &undoButton, &redoButton, &bypassButton, &deltaButton })
+    presetButton.setTitle ("Preset");
+    presetButton.onClick = [this] { showPresetMenu(); };
+    for (auto* b : { &presetButton, &undoButton, &redoButton, &bypassButton, &deltaButton })
         addAndMakeVisible (*b);
 
     display.onSelectionChanged = [this] (int band) { dock.setBand (band); };
@@ -85,6 +88,8 @@ void OpenFilterEditor::resized()
     undoButton.setBounds (left.removeFromLeft (60));
     left.removeFromLeft (6);
     redoButton.setBounds (left.removeFromLeft (60));
+    left.removeFromLeft (16);
+    presetButton.setBounds (left.removeFromLeft (juce::jmin (260, juce::jmax (120, right.getRight() - left.getX() - 24))));
 
     auto col = outputColumn.reduced (0, 12);
     col.removeFromTop (36);
@@ -150,8 +155,70 @@ void OpenFilterEditor::paintMeter (juce::Graphics& g)
     }
 }
 
+void OpenFilterEditor::showPresetMenu()
+{
+    const auto files = presets::list();
+    juce::PopupMenu menu;
+    const auto folder = presets::userFolder();
+    for (int i = 0; i < files.size(); ++i)
+        menu.addItem (100 + i, files[i].getRelativePathFrom (folder).upToLastOccurrenceOf (presets::kExtension, false, true),
+                      true, files[i].getFileNameWithoutExtension() == processor.presetName);
+    if (files.isEmpty())
+        menu.addItem (99, "No saved presets", false);
+    menu.addSeparator();
+    menu.addItem (1, "Save as...");
+    menu.addItem (2, "Load from file...");
+    menu.addItem (3, "Show presets folder");
+
+    juce::Component::SafePointer<OpenFilterEditor> safe (this);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (presetButton).withParentComponent (this), [safe, files, folder] (int result)
+    {
+        if (safe == nullptr || result == 0)
+            return;
+        auto& proc = safe->processor;
+        juce::String error;
+
+        if (result >= 100 && result - 100 < files.size())
+        {
+            if (presets::load (proc, files[result - 100], error))
+                proc.presetName = files[result - 100].getFileNameWithoutExtension();
+        }
+        else if (result == 3)
+            folder.revealToUser();
+        else if (result == 1 || result == 2)
+        {
+            const bool saving = result == 1;
+            safe->chooser = std::make_unique<juce::FileChooser> (saving ? "Save preset" : "Load preset", folder, juce::String ("*") + presets::kExtension);
+            const int flags = saving ? juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting
+                                     : juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
+            safe->chooser->launchAsync (flags, [safe, saving] (const juce::FileChooser& fc)
+            {
+                auto file = fc.getResult();
+                if (safe == nullptr || file == juce::File())
+                    return;
+                juce::String err;
+                if (saving)
+                    file = file.withFileExtension (presets::kExtension);
+                if (saving ? presets::save (safe->processor, file, err) : presets::load (safe->processor, file, err))
+                    safe->processor.presetName = file.getFileNameWithoutExtension();
+                if (err.isNotEmpty())
+                    juce::NativeMessageBox::showAsync (juce::MessageBoxOptions().withIconType (juce::MessageBoxIconType::WarningIcon)
+                                                           .withTitle ("Preset").withMessage (err).withButton ("OK").withAssociatedComponent (safe.getComponent()), nullptr);
+            });
+        }
+
+        if (error.isNotEmpty())
+            juce::NativeMessageBox::showAsync (juce::MessageBoxOptions().withIconType (juce::MessageBoxIconType::WarningIcon)
+                                                   .withTitle ("Preset").withMessage (error).withButton ("OK").withAssociatedComponent (safe.getComponent()), nullptr);
+    });
+}
+
 void OpenFilterEditor::timerCallback()
 {
+    const auto presetText = processor.presetName.isEmpty() ? juce::String ("Presets") : processor.presetName;
+    if (presetButton.getButtonText() != presetText)
+        presetButton.setButtonText (presetText);
+
     display.refresh();
     dock.refresh();
     undoButton.setEnabled (processor.undo.canUndo());

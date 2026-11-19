@@ -10,6 +10,7 @@ Dial::Dial (juce::String labelText) : label (std::move (labelText))
 
 void Dial::attach (juce::RangedAudioParameter* parameter, juce::UndoManager* undo)
 {
+    valueEditor.reset();
     attachment.reset();
     param = parameter;
     if (param != nullptr)
@@ -64,10 +65,58 @@ void Dial::setNormalised (float value)
         attachment->setValueAsPartOfGesture (param->convertFrom0to1 (juce::jlimit (0.0f, 1.0f, value)));
 }
 
-void Dial::mouseDown (const juce::MouseEvent&)
+void Dial::showValueEditor()
+{
+    valueEditor = std::make_unique<juce::TextEditor>();
+    valueEditor->setFont (theme::mono (12.0f));
+    valueEditor->setJustification (juce::Justification::centred);
+    valueEditor->setColour (juce::TextEditor::backgroundColourId, theme::ground);
+    valueEditor->setColour (juce::TextEditor::textColourId, theme::text);
+    valueEditor->setColour (juce::TextEditor::outlineColourId, theme::lineStrong);
+    valueEditor->setColour (juce::TextEditor::focusedOutlineColourId, theme::accent);
+    valueEditor->setColour (juce::TextEditor::highlightColourId, theme::lineStrong);
+    valueEditor->setText (param->getCurrentValueAsText(), false);
+    valueEditor->setBounds (valueArea().expanded (0, 2));
+    valueEditor->setTitle (param->getName (64));
+    addAndMakeVisible (*valueEditor);
+    valueEditor->selectAll();
+    valueEditor->grabKeyboardFocus();
+
+    // The editor must not be destroyed from inside its own callback.
+    juce::Component::SafePointer<Dial> safe (this);
+    const auto close = [safe] (bool apply)
+    {
+        juce::MessageManager::callAsync ([safe, apply] { if (safe != nullptr) safe->closeValueEditor (apply); });
+    };
+    valueEditor->onReturnKey = [close] { close (true); };
+    valueEditor->onEscapeKey = [close] { close (false); };
+    valueEditor->onFocusLost = [close] { close (true); };
+}
+
+void Dial::closeValueEditor (bool apply)
+{
+    if (valueEditor == nullptr)
+        return;
+    const auto text = valueEditor->getText();
+    valueEditor.reset();
+    if (apply && attachment != nullptr && param != nullptr && text.trim().isNotEmpty() && text != param->getCurrentValueAsText())
+    {
+        const auto& range = param->getNormalisableRange();
+        const float plain = param->convertFrom0to1 (juce::jlimit (0.0f, 1.0f, param->getValueForText (text)));
+        attachment->setValueAsCompleteGesture (juce::jlimit (range.start, range.end, plain));
+    }
+    repaint();
+}
+
+void Dial::mouseDown (const juce::MouseEvent& e)
 {
     if (attachment == nullptr || dimmed)
         return;
+    if (valueArea().contains (e.getPosition()))   // click the value to type one
+    {
+        showValueEditor();
+        return;
+    }
     dragging = true;
     dragStart = param->getValue();
     attachment->beginGesture();
@@ -88,9 +137,9 @@ void Dial::mouseUp (const juce::MouseEvent&)
     dragging = false;
 }
 
-void Dial::mouseDoubleClick (const juce::MouseEvent&)
+void Dial::mouseDoubleClick (const juce::MouseEvent& e)
 {
-    if (attachment != nullptr && ! dimmed)
+    if (attachment != nullptr && ! dimmed && ! valueArea().contains (e.getPosition()))
         attachment->setValueAsCompleteGesture (param->convertFrom0to1 (param->getDefaultValue()));
 }
 

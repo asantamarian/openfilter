@@ -28,6 +28,9 @@ public:
 
 private:
     void setNormalised (float value);
+    juce::Rectangle<int> valueArea() const { return getLocalBounds().removeFromBottom (32).removeFromTop (18); }
+    void showValueEditor();
+    void closeValueEditor (bool apply);
 
     juce::String label;
     juce::RangedAudioParameter* param = nullptr;
@@ -35,6 +38,7 @@ private:
     juce::Colour colour { theme::accent };
     bool bipolar = false, dimmed = false, dragging = false;
     float dragStart = 0.0f;
+    std::unique_ptr<juce::TextEditor> valueEditor;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Dial)
 };

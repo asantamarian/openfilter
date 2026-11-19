@@ -25,9 +25,8 @@ juce::AudioParameterFloatAttributes freqAttr()
         .withStringFromValueFunction ([] (float v, int) { return formatFrequency (v); })
         .withValueFromStringFunction ([] (const juce::String& t)
         {
-            const auto s = t.trim().toLowerCase();
-            const float v = s.getFloatValue();
-            return s.containsChar ('k') ? v * 1000.0f : v;
+            const double f = parseFrequency (t);
+            return static_cast<float> (f > 0.0 ? f : 1000.0);
         });
 }
 
@@ -73,6 +72,44 @@ const juce::StringArray& placementNames()
 juce::String formatFrequency (double hz)
 {
     return hz < 1000.0 ? juce::String (juce::roundToInt (hz)) + " Hz" : juce::String (hz / 1000.0, 2) + " kHz";
+}
+
+double parseFrequency (const juce::String& text)
+{
+    const auto s = text.trim().toLowerCase().removeCharacters (" ");
+    if (s.isEmpty())
+        return 0.0;
+
+    // Note name: letter, optional accidental, octave, optional cents.
+    const auto first = s[0];
+    if (first >= 'a' && first <= 'g' && s.length() >= 2)
+    {
+        static const int semitoneFromC[] = { 9, 11, 0, 2, 4, 5, 7 };   // a b c d e f g
+        int semitone = semitoneFromC[first - 'a'];
+        int pos = 1;
+        if (s[pos] == '#') { ++semitone; ++pos; }
+        else if (s[pos] == 'b' && s.length() > 2) { --semitone; ++pos; }
+
+        const auto rest = s.substring (pos);
+        const int centsAt = rest.indexOfAnyOf ("+-", 1);
+        const auto octaveText = centsAt > 0 ? rest.substring (0, centsAt) : rest;
+        if (octaveText.isNotEmpty() && octaveText.containsOnly ("-0123456789"))
+        {
+            const double cents = centsAt > 0 ? rest.substring (centsAt).getDoubleValue() : 0.0;
+            const double midi = 12.0 * (octaveText.getIntValue() + 1) + semitone + cents / 100.0;
+            return 440.0 * std::pow (2.0, (midi - 69.0) / 12.0);
+        }
+        return 0.0;
+    }
+
+    if (! juce::CharacterFunctions::isDigit (first) && first != '.')
+        return 0.0;
+
+    // "1k2" means 1.2 kHz.
+    const int k = s.indexOfChar ('k');
+    if (k > 0 && k + 1 < s.length() && juce::CharacterFunctions::isDigit (s[k + 1]) && ! s.substring (0, k).containsChar ('.'))
+        return (s.substring (0, k) + "." + s.substring (k + 1)).getDoubleValue() * 1000.0;
+    return s.getDoubleValue() * (k > 0 ? 1000.0 : 1.0);
 }
 
 juce::String formatGain (double db)
