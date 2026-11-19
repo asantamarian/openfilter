@@ -22,7 +22,7 @@ OpenFilterProcessor::OpenFilterProcessor()
         bandPtrs[static_cast<size_t> (b)] = { raw (id ("used")), raw (id ("on")), raw (id ("shape")), raw (id ("slope")),
                                               raw (id ("freq")), raw (id ("gain")), raw (id ("q")), raw (id ("place")),
                                               raw (id ("dyn")), raw (id ("range")), raw (id ("thr")), raw (id ("athr")), raw (id ("ratio")),
-                                              raw (id ("knee")), raw (id ("atk")), raw (id ("rel")), raw (id ("trig")), raw (id ("sc")) };
+                                              raw (id ("knee")), raw (id ("atk")), raw (id ("rel")), raw (id ("trig")), raw (id ("sc")), raw (id ("lin")) };
     }
     gainScalePtr = raw ("gain_scale");
     outGainPtr = raw ("out_gain");
@@ -31,13 +31,16 @@ OpenFilterProcessor::OpenFilterProcessor()
     bypassPtr = raw ("bypass");
     deltaPtr = raw ("delta");
     phaseModePtr = raw ("phase_mode");
+    linQualityPtr = raw ("lin_quality");
     bypassParam = apvts.getParameter ("bypass");
     apvts.addParameterListener ("phase_mode", this);
+    apvts.addParameterListener ("lin_quality", this);
 }
 
 OpenFilterProcessor::~OpenFilterProcessor()
 {
     apvts.removeParameterListener ("phase_mode", this);
+    apvts.removeParameterListener ("lin_quality", this);
     cancelPendingUpdate();
 }
 
@@ -45,7 +48,7 @@ void OpenFilterProcessor::updateLatency()
 {
     const int mode = juce::roundToInt (phaseModePtr->load());
     const double rate = getSampleRate() > 0.0 ? getSampleRate() : 48000.0;
-    setLatencySamples (Engine::latencyFor (mode, rate));
+    setLatencySamples (Engine::latencyFor (mode, rate, juce::roundToInt (linQualityPtr->load())));
 }
 
 //==============================================================================
@@ -98,8 +101,10 @@ void OpenFilterProcessor::readSnapshot (ParamSnapshot& s) const noexcept
         out.dyn.releaseMs = f (p.rel);
         out.dyn.below = f (p.trig) > 0.5f;
         out.dyn.external = f (p.sc) > 0.5f;
+        out.linear = f (p.lin) > 0.5f;
     }
     s.phaseMode = juce::roundToInt (f (phaseModePtr));
+    s.linQuality = juce::roundToInt (f (linQualityPtr));
     s.gainScale = f (gainScalePtr) * 0.01;
     s.outGainDb = f (outGainPtr);
     s.pan = f (outPanPtr) * 0.01;

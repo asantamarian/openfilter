@@ -40,6 +40,11 @@ BandDock::BandDock (OpenFilterProcessor& p) : processor (p)
     };
     addAndMakeVisible (externalButton);
 
+    linearButton.setClickingTogglesState (true);
+    linearButton.setTitle ("Linear phase for this band");
+    linearButton.setTooltip ("In Mixed phase mode: realise this band with linear phase. Its dynamics do not run while it is linear.");
+    addChildComponent (linearButton);
+
     soloButton.setTooltip ("Hear only the part of the signal this band works on. Also: hold S in the display.");
     soloButton.onClick = [this] { processor.setSoloBand (processor.soloBand() >= 0 || band < 0 ? -1 : band); };
     addAndMakeVisible (soloButton);
@@ -91,6 +96,7 @@ void BandDock::setBand (int newBand)
     placeAttachment.reset();
     dynAttachment.reset();
     autoAttachment.reset();
+    linearAttachment.reset();
 
     const bool has = band >= 0;
     if (has)
@@ -100,6 +106,7 @@ void BandDock::setBand (int newBand)
         placeAttachment = std::make_unique<ComboAttachment> (processor.apvts, params::bandId (band, "place"), placeBox);
         dynAttachment = std::make_unique<ComboAttachment> (processor.apvts, params::bandId (band, "dyn"), dynBox);
         autoAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (processor.apvts, params::bandId (band, "athr"), autoButton);
+        linearAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (processor.apvts, params::bandId (band, "lin"), linearButton);
     }
     const auto bind = [&] (Dial& d, const char* suffix) { d.attach (has ? processor.bandParam (band, suffix) : nullptr, &processor.undo); };
     bind (thrDial, "thr");
@@ -124,6 +131,18 @@ void BandDock::setBand (int newBand)
 void BandDock::refresh()
 {
     bool changed = false;
+
+    // The per-band Linear toggle only exists in Mixed phase mode.
+    const bool mixed = juce::roundToInt (processor.apvts.getRawParameterValue ("phase_mode")->load()) == 3;
+    if (mixed != mixedMode)
+    {
+        mixedMode = mixed;
+        linearButton.setVisible (mixed);
+        resized();
+        changed = true;
+    }
+    linearButton.setEnabled (band >= 0);
+
     for (int i = 0; i < kMaxBands; ++i)
     {
         const bool u = processor.readBand (i).used;
@@ -238,11 +257,13 @@ void BandDock::resized()
     dialsArea = area;
 
     auto buttons = chipsArea.withTop (chipsArea.getBottom() - 28);
-    soloButton.setBounds (buttons.removeFromLeft (72));
+    soloButton.setBounds (buttons.removeFromLeft (60));
     buttons.removeFromLeft (6);
-    bypassButton.setBounds (buttons.removeFromLeft (84));
+    bypassButton.setBounds (buttons.removeFromLeft (76));
     buttons.removeFromLeft (6);
-    deleteButton.setBounds (buttons.removeFromLeft (84));
+    deleteButton.setBounds (buttons.removeFromLeft (76));
+    buttons.removeFromLeft (6);
+    linearButton.setBounds (buttons.removeFromLeft (48));
 
     // Shape, slope and channel stacked.
     auto s = shapeArea;

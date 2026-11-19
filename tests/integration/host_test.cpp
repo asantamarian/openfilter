@@ -178,6 +178,32 @@ void testPlugin (juce::AudioPluginFormatManager& formats, const juce::String& pa
                      plugin->getLatencySamples(), juce::Decibels::gainToDecibels (out / in));
         check (plugin->getLatencySamples() == 76, "Natural mode at 48 kHz reports 76 samples of latency");
         check (std::abs (juce::Decibels::gainToDecibels (out / in) - 12.0) < 0.1, "bell gain in Natural mode");
+        // Linear phase, Medium: 8192 taps, so 4096 + one 512-sample partition.
+        phase->setValueNotifyingHost (phase->getValueForText ("Linear"));
+        in = out = 0.0;
+        for (int block = 0; block < 300; ++block)
+        {
+            buffer.clear();
+            for (int i = 0; i < 512; ++i)
+            {
+                const float s = 0.1f * std::sin (juce::MathConstants<float>::twoPi * 1000.0f * static_cast<float> (block * 512 + i) / 48000.0f);
+                buffer.setSample (0, i, s);
+                buffer.setSample (1, i, s);
+            }
+            const double before = buffer.getRMSLevel (0, 0, 512);
+            plugin->processBlock (buffer, midi);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (1);
+            if (block >= 200)
+            {
+                in += before;
+                out += buffer.getRMSLevel (0, 0, 512);
+            }
+        }
+        std::printf ("    Linear mode: host sees %d samples of latency, bell measures %+.2f dB\n",
+                     plugin->getLatencySamples(), juce::Decibels::gainToDecibels (out / in));
+        check (plugin->getLatencySamples() == 4608, "Linear mode, Medium, at 48 kHz reports 4608 samples of latency");
+        check (std::abs (juce::Decibels::gainToDecibels (out / in) - 12.0) < 0.1, "bell gain in Linear mode");
+
         phase->setValueNotifyingHost (0.0f);
         for (int block = 0; block < 6; ++block)   // LV2 reports latency only while running
         {

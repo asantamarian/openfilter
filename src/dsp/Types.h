@@ -67,6 +67,9 @@ struct BandParams
     double gainDb = 0.0;
     double q = 1.0;
     DynParams dyn {};
+    bool linear = false;   // in Mixed phase mode: realise this band in the linear-phase path
+
+    bool operator== (const BandParams&) const = default;
 
     /** True when dynamics are switched on and can do something for this shape. */
     bool dynamic() const noexcept
@@ -88,7 +91,8 @@ struct BandParams
 struct ParamSnapshot
 {
     std::array<BandParams, kMaxBands> bands {};   // gainDb here is the raw parameter value
-    int phaseMode = 0;       // 0 zero latency, 1 natural (linear and mixed arrive later)
+    int phaseMode = 0;       // 0 zero latency, 1 natural, 2 linear, 3 mixed
+    int linQuality = 1;      // 0 low .. 4 max: length of the linear-phase kernel
     double gainScale = 1.0;
     double outGainDb = 0.0;
     double pan = 0.0;        // -1..1

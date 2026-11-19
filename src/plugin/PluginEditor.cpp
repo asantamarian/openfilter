@@ -63,12 +63,15 @@ OpenFilterEditor::OpenFilterEditor (OpenFilterProcessor& p)
     deltaButton.setClickingTogglesState (true);
     undoButton.onClick = [this] { processor.undo.undo(); };
     redoButton.onClick = [this] { processor.undo.redo(); };
-    // Linear and Mixed are in the parameter already but not built yet.
-    phaseBox.addItemList ({ "Zero latency", "Natural", "Linear (not yet)", "Mixed (not yet)" }, 1);
-    phaseBox.setItemEnabled (3, false);
-    phaseBox.setItemEnabled (4, false);
+    phaseBox.addItemList ({ "Zero latency", "Natural", "Linear", "Mixed" }, 1);
     phaseBox.setTitle ("Phase mode");
-    phaseBox.setTooltip ("Zero latency: no delay, less exact in the top octave. Natural: follows the ideal curve up to 20 kHz, with a short delay and more CPU.");
+    phaseBox.setTooltip ("Zero latency: no delay, less exact in the top octave. Natural: follows the ideal curve up to 20 kHz, with a short delay and more CPU. "
+                         "Linear: no phase shift at all, with a long delay; dynamics do not run. Mixed: each band chooses, with the Lin button in the dock.");
+    qualityBox.addItemList ({ "Low", "Medium", "High", "Very high", "Max" }, 1);
+    qualityBox.setTitle ("Linear phase quality");
+    qualityBox.setTooltip ("Length of the linear-phase filter. Longer is more exact at low frequencies and for narrow bands, and adds delay.");
+    qualityAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (p.apvts, "lin_quality", qualityBox);
+    addChildComponent (qualityBox);
     phaseAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (p.apvts, "phase_mode", phaseBox);
     addAndMakeVisible (phaseBox);
 
@@ -136,8 +139,14 @@ void OpenFilterEditor::resized()
     viewButton.setBounds (right.removeFromRight (56));
     right.removeFromRight (16);
     phaseBox.setBounds (right.removeFromRight (132));
-    right.removeFromRight (8);
-    latencyArea = right.removeFromRight (84);
+    right.removeFromRight (6);
+    // The quality selector only appears in the linear modes; the latency readout sits left of it.
+    if (qualityBox.isVisible())
+    {
+        qualityBox.setBounds (right.removeFromRight (104));
+        right.removeFromRight (6);
+    }
+    latencyArea = right.removeFromRight (78);
     auto left = topBar.reduced (16, 11).withTrimmedLeft (170);
     undoButton.setBounds (left.removeFromLeft (60));
     left.removeFromLeft (6);
@@ -368,6 +377,13 @@ void OpenFilterEditor::showPresetMenu()
 
 void OpenFilterEditor::timerCallback()
 {
+    const int phase = phaseBox.getSelectedItemIndex();
+    if (qualityBox.isVisible() != (phase >= 2))
+    {
+        qualityBox.setVisible (phase >= 2);
+        resized();
+        repaint (topBar);
+    }
     if (processor.getLatencySamples() != shownLatency)
     {
         shownLatency = processor.getLatencySamples();

@@ -2,9 +2,11 @@
 
 #include "dynamics/Detector.h"
 #include "kernel/ChannelFilter.h"
+#include "lanes/FirLane.h"
 #include "util/Halfband.h"
 
 #include <atomic>
+#include <thread>
 #include <vector>
 
 namespace of
@@ -56,6 +58,11 @@ private:
 class Engine
 {
 public:
+    Engine() = default;
+    ~Engine();
+    Engine (const Engine&) = delete;
+    Engine& operator= (const Engine&) = delete;
+
     void prepare (double sampleRate, int maxBlock, int numChannels);
     void reset() noexcept;
 
@@ -73,8 +80,12 @@ public:
     int latencySamples() const noexcept { return latency.load (std::memory_order_relaxed); }
 
     /** Latency a mode will have at a sample rate: lets the plugin tell the host from the
-        message thread. Phase modes: 0 zero latency, 1 natural. */
-    static int latencyFor (int phaseMode, double sampleRate) noexcept;
+        message thread. Phase modes: 0 zero latency, 1 natural, 2 linear, 3 mixed. linQuality
+        (0..4) only matters for linear and mixed. */
+    static int latencyFor (int phaseMode, double sampleRate, int linQuality = 1) noexcept;
+
+    /** For tests: true once the linear-phase kernel matches the bands last sent to it. */
+    bool linearSettled() const noexcept;
     static int oversamplingFor (int phaseMode, double sampleRate) noexcept;
     int controlBlockSize() const noexcept { return controlLen; }
 
@@ -89,11 +100,13 @@ private:
     void processSegment (double* const* io, int numChannels, int offset, int n,
                          const double* const* sidechain, int sidechainChannels) noexcept;
     void updateSolo (const ParamSnapshot& params) noexcept;
-    void configure (int mode) noexcept;
+    void configure (int mode, int quality) noexcept;
+    void postFirRequest (const ParamSnapshot& params) noexcept;
+    void workerLoop();
+    void stopWorker();
     bool runBands (double* left, double* right, int n) noexcept;
 
     static constexpr int kSteepHalf = 69, kWideHalf = 13;
-    static constexpr int kDelayMask = 255;
 
     // Per channel: the two half-band stages, their work buffers and the dry delay line.
     struct Stages
@@ -101,12 +114,28 @@ private:
         Halfband first, second;
         std::array<double, 256> mid {};
         std::array<double, 512> work {};
-        std::array<double, kDelayMask + 1> delay {};
+        std::vector<double> delay;   // dry delay line, sized for the longest latency
         double pad = 0.0;
     };
     std::array<Stages, 2> stages {};
-    int delayPos = 0;
-    int phaseMode = 0, factor = 1;
+    int delayPos = 0, delayMask = 0;
+    int phaseMode = 0, linQuality = 1, factor = 1;
+
+    // Linear-phase path. Kernels are designed on a worker thread; the audio thread posts the
+    // band set through a small mailbox guarded by a try-lock it never waits on.
+    struct FirRequest
+    {
+        std::array<BandParams, kMaxBands> bands {};
+        int count = 0, quality = 1;
+        bool operator== (const FirRequest&) const = default;
+    };
+    FirLane fir;
+    bool firMode = false, firRepost = false;
+    FirRequest lastRequest {}, mail {};
+    std::atomic_flag mailLock = ATOMIC_FLAG_INIT;
+    std::atomic<unsigned> mailSerial { 0 }, doneSerial { 0 };
+    std::thread worker;
+    std::atomic<bool> workerRunning { false };
     std::atomic<int> latency { 0 };
     double modeFade = 1.0;
 

@@ -218,46 +218,62 @@ same settings.
 
 ## 6. Linear and mixed phase
 
-**Kernel design** (worker thread), per lane channel (L, R, M, S):
-
-1. Collect the FIR-lane bands for that channel (Stereo bands contribute to L and R).
-2. Sample the product of prototype magnitudes on `4N` uniformly spaced bins from 0
-   to `fs` (zero phase, real). Above Nyquist mirror.
-3. Inverse FFT, rotate by `N/2`, keep the centre `N` taps, apply a Kaiser window
-   (`beta = 9` *(tune)*).
-4. Hand the kernel to the audio thread through the mailbox (01 §3).
-
-`N` at 44.1/48 kHz: 4096, 8192, 16384, 32768, 65536 for Low to Max; doubled per
-rate octave. Latency `N/2`.
-
-**Convolution**: zero-added-latency partitioned convolution. Milestone M4 uses
-`juce::dsp::Convolution` with `NonUniform { 512 }` head; replace with
-`of::PartitionedConvolver` only if profiling demands it.
-
-**Kernel swap**: the old and new convolvers run in parallel for 1024 samples with
-an equal-gain crossfade. While a parameter is being dragged, redesign is requested
-at most 30 times per second; the last request always wins.
-
-**Lane skipping**: a channel whose FIR bands are all at unity gets a pure delay of
-`N/2` instead of a convolver.
-
-**Dynamic bands in the FIR lane.** For each such band `i` with static gain `G0` and
-range `R`, design a 4096-tap linear-phase kernel
-`K_i = H_i(G0 + R) / H_i(G0) - 1` (magnitudes, zero phase). After the main FIR:
+**One stage for all channels.** Every linear-phase band of a stereo pair collapses
+into a 2x2 matrix of zero-phase (real) responses:
 
 ```
-y = delay(s, 2048) + sum_i alpha_i(t) * (K_i * s)
-alpha_i = (10^(dyn_i/20) - 1) / (10^(R/20) - 1)
+[L']   1 [ (Hm+Hs) Hl   (Hm-Hs) Hr ] [L]
+[R'] = - [ (Hm-Hs) Hl   (Hm+Hs) Hr ] [R]
+       2
 ```
 
-where `dyn_i` is the band's current dynamic gain in dB. This is exact for a single
-band and a first-order approximation where two active dynamic bands overlap
-(research item R-5).
+`Hl`, `Hr` are the products of the stereo, left and right bands; `Hm`, `Hs` of the
+mid and side bands. This is exactly "left/right bands, then mid/side bands" in a
+single convolution stage, so the latency is paid once. Without mid or side bands
+the off-diagonal kernels are zero and skipped.
 
-**All Pass** bands have no effect in the FIR lane; the UI badges them.
+**Kernel design** (worker thread), for each of the four responses:
 
-**Mixed mode**: bands with `lin` on are designed into the FIR lane, the others run
-in the IIR lanes ahead of it. Latency is that of the FIR lane.
+1. Sample the response on `2N` uniformly spaced bins from 0 to `fs` using the
+   prototype magnitudes (above Nyquist mirror). The values are real and may be
+   negative (the `Hm-Hs` terms).
+2. Inverse FFT, keep the `N` taps around the centre, apply a Kaiser window
+   (`beta = 9`) **centred on tap `N/2`**. A window centred half a sample off leaves
+   the kernel slightly asymmetric and a flat response slightly off unity.
+3. Cut into partitions of `P` taps and store each partition's spectrum.
+
+`N` at 44.1/48 kHz: 4096, 8192, 16384, 32768, 65536 for Low to Max; `P` = 512.
+Both double per rate octave. **Latency `N/2 + P`**: the kernel's centre plus one
+partition of blocking in the convolver. A convolver with a zero-latency head would
+remove the `P`; it is a possible refinement.
+
+**Convolution**: uniformly partitioned overlap-save, FFT size `2P`, with a
+frequency-domain delay line of input spectra shared by all four kernels (`of::FirLane`).
+
+**Threads.** The audio thread posts the set of linear-phase bands through a mailbox
+guarded by a try-lock it never waits on. The worker designs into the kernel slot
+the audio thread is not using and publishes it; the audio thread swaps at a block
+boundary and crossfades old to new across that block. The audio thread never
+writes a kernel slot. With no linear-phase bands the lane is a pure delay read
+straight from the delay line, and a design made for another quality that arrives
+late is dropped. Nothing is allocated after `prepare`.
+
+**Idle.** With nothing active in either path the output is the delayed input, bit
+for bit.
+
+**Mixed mode**: bands with `lin` on go to the linear-phase lane, the others run in
+the minimum-phase lanes ahead of it. Latency is that of the lane.
+
+**Not built yet:** dynamics for bands in the linear-phase lane (planned: a
+4096-tap difference kernel per dynamic band, `K = H(G0+R)/H(G0) - 1`, mixed in by
+the detector; research item R-5). Until then a band's dynamics do not run while it
+is linear; in Mixed mode, leave dynamic bands unflagged. All Pass bands have no
+effect in the lane.
+
+Verified by `tests/unit/linear_tests.cpp`: exact latency, mirror-symmetric impulse
+response, response within 0.1 dB of the prototype from 60 Hz to 19 kHz at Medium,
+channel separation for left and side bands, and Mixed with no flagged band equal
+to Zero Latency plus the delay.
 
 ## 7. Dynamic bands
 

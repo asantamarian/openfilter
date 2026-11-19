@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <chrono>
 #include <numbers>
 
 namespace of
@@ -183,8 +184,10 @@ int Engine::oversamplingFor (int phaseMode, double sampleRate) noexcept
     return sampleRate < 70000.0 ? 4 : sampleRate < 140000.0 ? 2 : 1;
 }
 
-int Engine::latencyFor (int phaseMode, double sampleRate) noexcept
+int Engine::latencyFor (int phaseMode, double sampleRate, int linQuality) noexcept
 {
+    if (phaseMode == 2 || phaseMode == 3)
+        return FirLane::latencyFor (linQuality, sampleRate);
     switch (oversamplingFor (phaseMode, sampleRate))
     {
         case 4:  return kSteepHalf + (kWideHalf + 1) / 2;   // 69 + 7
@@ -193,35 +196,122 @@ int Engine::latencyFor (int phaseMode, double sampleRate) noexcept
     }
 }
 
+Engine::~Engine() { stopWorker(); }
+
+void Engine::stopWorker()
+{
+    workerRunning.store (false);
+    if (worker.joinable())
+        worker.join();
+}
+
+void Engine::workerLoop()
+{
+    FirRequest local;
+    while (workerRunning.load (std::memory_order_relaxed))
+    {
+        const unsigned serial = mailSerial.load (std::memory_order_acquire);
+        if (serial != doneSerial.load (std::memory_order_relaxed))
+        {
+            while (mailLock.test_and_set (std::memory_order_acquire))
+                std::this_thread::yield();
+            local = mail;
+            const unsigned taken = mailSerial.load (std::memory_order_relaxed);
+            mailLock.clear (std::memory_order_release);
+
+            if (fir.design (local.bands.data(), local.count, local.quality))
+                doneSerial.store (taken, std::memory_order_release);
+        }
+        std::this_thread::sleep_for (std::chrono::milliseconds (2));
+    }
+}
+
+bool Engine::linearSettled() const noexcept
+{
+    return ! firMode || (! firRepost && mailSerial.load() == doneSerial.load() && fir.shaping() == (lastRequest.count > 0));
+}
+
 void Engine::prepare (double sampleRate, int maxBlock, int)
 {
+    stopWorker();   // the worker must not be designing while buffers are reallocated
+
     fs = sampleRate;
     controlLen = controlBlockFor (sampleRate);
     rampLen = std::max (1, static_cast<int> (0.010 * sampleRate));
     for (auto& d : dry)
         d.assign (static_cast<size_t> (std::max (1, maxBlock)), 0.0);
-    configure (phaseMode);
+
+    fir.prepare (sampleRate);
+    int delaySize = 256;
+    while (delaySize < FirLane::latencyFor (4, sampleRate) + 16)
+        delaySize <<= 1;
+    delayMask = delaySize - 1;
+    for (auto& ch : stages)
+        ch.delay.assign (static_cast<size_t> (delaySize), 0.0);
+
+    doneSerial.store (mailSerial.load());
+    configure (phaseMode, linQuality);
     reset();
+
+    workerRunning.store (true);
+    worker = std::thread ([this] { workerLoop(); });
 }
 
-void Engine::configure (int mode) noexcept
+void Engine::configure (int mode, int quality) noexcept
 {
     phaseMode = mode;
+    linQuality = quality;
+    firMode = mode == 2 || mode == 3;
     factor = oversamplingFor (mode, fs);
-    latency.store (latencyFor (mode, fs), std::memory_order_relaxed);
+    latency.store (latencyFor (mode, fs, quality), std::memory_order_relaxed);
     for (auto& ch : stages)
     {
         ch.first.design (factor == 4 ? kSteepHalf : kWideHalf);
         ch.second.design (kWideHalf);
         ch.pad = 0.0;
-        ch.delay.fill (0.0);
+        std::fill (ch.delay.begin(), ch.delay.end(), 0.0);
     }
     delayPos = 0;
+    if (firMode)
+    {
+        fir.reset (quality);   // starts as a pure delay until the worker delivers a kernel
+        lastRequest = {};
+        firRepost = true;
+    }
     for (auto& b : bands)
     {
         b.prepare (fs * factor, controlLen * factor);   // also resets the band
         b.prepareDetector (fs, controlLen);             // detectors always run at the host rate
     }
+}
+
+void Engine::postFirRequest (const ParamSnapshot& params) noexcept
+{
+    // The linear-phase members: every audible band in Linear, the flagged ones in Mixed.
+    FirRequest req;
+    req.quality = linQuality;
+    for (const auto& band : params.bands)
+    {
+        BandParams p = band;
+        if (hasGain (p.shape))
+            p.gainDb = std::clamp (p.gainDb * params.gainScale, -60.0, 60.0);
+        p.dyn = {};   // dynamics do not run in the linear-phase path
+        if (p.audible() && (phaseMode == 2 || p.linear))
+            req.bands[static_cast<size_t> (req.count++)] = p;
+    }
+    if (req == lastRequest && ! firRepost)
+        return;
+
+    if (! mailLock.test_and_set (std::memory_order_acquire))   // never wait for the worker
+    {
+        mail = req;
+        mailSerial.fetch_add (1, std::memory_order_release);
+        mailLock.clear (std::memory_order_release);
+        lastRequest = req;
+        firRepost = false;
+    }
+    else
+        firRepost = true;   // try again next control block
 }
 
 void Engine::reset() noexcept
@@ -233,9 +323,15 @@ void Engine::reset() noexcept
         ch.first.reset();
         ch.second.reset();
         ch.pad = 0.0;
-        ch.delay.fill (0.0);
+        std::fill (ch.delay.begin(), ch.delay.end(), 0.0);
     }
     delayPos = 0;
+    if (firMode)
+    {
+        fir.reset (linQuality);
+        lastRequest = {};
+        firRepost = true;
+    }
     controlPhase = 0;
     fresh = true;
     modeFade = 1.0;
@@ -249,14 +345,17 @@ void Engine::reset() noexcept
 
 void Engine::updateTargets (const ParamSnapshot& params, bool mono) noexcept
 {
-    if (params.phaseMode != phaseMode)
+    const int quality = std::clamp (params.linQuality, 0, 4);
+    if (params.phaseMode != phaseMode || (firMode && quality != linQuality))
     {
-        // A different phase mode changes rate and latency. It is not automatable, so a
-        // short fade-in after the switch is enough.
+        // A different phase mode or kernel length changes latency. Neither is automatable,
+        // so a short fade-in after the switch is enough.
         const bool wasFresh = fresh;
-        configure (params.phaseMode);
+        configure (params.phaseMode, quality);
         modeFade = wasFresh ? 1.0 : 0.0;
     }
+    if (firMode)
+        postFirRequest (params);
 
     for (int i = 0; i < kMaxBands; ++i)
     {
@@ -266,6 +365,9 @@ void Engine::updateTargets (const ParamSnapshot& params, bool mono) noexcept
             p.gainDb = std::clamp (p.gainDb * params.gainScale, -60.0, 60.0);
             p.dyn.rangeDb = std::clamp (p.dyn.rangeDb * params.gainScale, -60.0, 60.0);
         }
+        // A band realised in the linear-phase path is silent in the minimum-phase one.
+        if (firMode && (phaseMode == 2 || p.linear))
+            p.used = false;
         bands[static_cast<size_t> (i)].update (p, mono);
         dynGains[static_cast<size_t> (i)].store (static_cast<float> (bands[static_cast<size_t> (i)].dynamicGainDb()), std::memory_order_relaxed);
     }
@@ -417,7 +519,7 @@ void Engine::processSegment (double* const* io, int numChannels, int offset, int
     {
         for (int i = 0; i < n; ++i)
         {
-            const int w = (delayPos + i) & kDelayMask, r = (delayPos + i - lat) & kDelayMask;
+            const int w = (delayPos + i) & delayMask, r = (delayPos + i - lat) & delayMask;
             stages[0].delay[static_cast<size_t> (w)] = left[i];
             dryL[i] = stages[0].delay[static_cast<size_t> (r)];
             if (right != nullptr)
@@ -426,7 +528,7 @@ void Engine::processSegment (double* const* io, int numChannels, int offset, int
                 dryR[i] = stages[1].delay[static_cast<size_t> (r)];
             }
         }
-        delayPos = (delayPos + n) & kDelayMask;
+        delayPos = (delayPos + n) & delayMask;
     }
     else
     {
@@ -435,7 +537,20 @@ void Engine::processSegment (double* const* io, int numChannels, int offset, int
             std::copy_n (right, n, dryR);
     }
 
-    if (factor == 1)
+    if (firMode)
+    {
+        // Minimum-phase bands first, then everything through the linear-phase lane, which
+        // also supplies the latency when it has no bands of its own.
+        const bool anyIir = runBands (left, right, n);
+        fir.process (left, right, n);
+        if (! anyIir && ! fir.shaping())
+        {
+            std::copy_n (dryL, n, left);   // nothing active: the delayed input, exactly
+            if (right != nullptr)
+                std::copy_n (dryR, n, right);
+        }
+    }
+    else if (factor == 1)
     {
         runBands (left, right, n);
     }

@@ -24,7 +24,9 @@ Milestone M1 (static EQ, zero latency) is built and M2 (full UI) is under way. B
 | Dynamic bands with the internal detector: threshold (manual or auto), range, ratio, knee, attack, release, trigger above or below (M3) | Built |
 | External sidechain per band, band solo (button, or hold S in the display) | Built |
 | Lookahead, free detector filter, sidechain listen (rest of M3) | Not yet |
-| Linear and mixed phase, spectral bands, auto gain, instance linking, EQ match, CLAP, accessibility pass (M4 to M7) | Not yet |
+| Linear phase (five kernel lengths) and Mixed phase (per-band choice), designed on a worker thread (M4) | Built |
+| Dynamics for bands in the linear-phase path | Not yet |
+| Spectral bands, auto gain, character, instance linking, EQ match, CLAP, accessibility pass (M5 to M7) | Not yet |
 
 Known gaps:
 
