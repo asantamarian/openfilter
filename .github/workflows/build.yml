@@ -1,0 +1,64 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build xvfb libasound2-dev libjack-jackd2-dev libfreetype-dev \
+            libfontconfig1-dev libx11-dev libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev \
+            libxrandr-dev libxrender-dev libglu1-mesa-dev mesa-common-dev
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOF_INSTALL_AFTER_BUILD=OFF
+      - name: Build
+        run: cmake --build build
+      - name: Test
+        run: cd build && xvfb-run -a ctest --output-on-failure
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openfilter-eq-linux
+          path: |
+            build/OpenFilterEQ_artefacts/Release/VST3
+            build/OpenFilterEQ_artefacts/Release/LV2
+            build/OpenFilterEQ_artefacts/Release/Standalone
+            build/editor.png
+
+  # Windows and macOS have never been built locally. These jobs are here to find out what
+  # breaks; they build and run the unit tests only, and may fail without blocking the rest.
+  windows:
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Configure
+        run: cmake -S . -B build -DOF_INSTALL_AFTER_BUILD=OFF
+      - name: Build
+        run: cmake --build build --config Release
+      - name: Unit tests
+        run: cd build && ctest -C Release -R of_tests --output-on-failure
+
+  macos:
+    runs-on: macos-14
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOF_INSTALL_AFTER_BUILD=OFF
+      - name: Build
+        run: cmake --build build
+      - name: Unit tests
+        run: cd build && ctest -R of_tests --output-on-failure
