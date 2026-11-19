@@ -5,14 +5,14 @@
 /** Design tokens of the default theme "Nocturne" (docs/spec/05-ui.md section 2). */
 namespace of::theme
 {
-inline const juce::Colour ground      { 0xff0A0C10 };
-inline const juce::Colour panel       { 0xff12151C };
-inline const juce::Colour raised      { 0xff1A1E27 };
-inline const juce::Colour line        { 0xff262B36 };
-inline const juce::Colour lineStrong  { 0xff343B49 };
-inline const juce::Colour gridMinor   { 0xff151920 };
-inline const juce::Colour gridMajor   { 0xff1E232D };
-inline const juce::Colour gridH       { 0xff171B23 };
+inline const juce::Colour ground      { 0xff07080F };
+inline const juce::Colour panel       { 0xff0E101B };
+inline const juce::Colour raised      { 0xff171A2B };
+inline const juce::Colour line        { 0xff262B45 };
+inline const juce::Colour lineStrong  { 0xff3A4168 };
+inline const juce::Colour gridMinor   { 0xff12152A };
+inline const juce::Colour gridMajor   { 0xff1E2347 };
+inline const juce::Colour gridH       { 0xff171B38 };
 inline const juce::Colour textFaint   { 0xff7D8798 };
 inline const juce::Colour textMuted   { 0xff9AA3B2 };
 inline const juce::Colour text        { 0xffE8ECF2 };
@@ -36,6 +36,63 @@ inline juce::Font mono (float size)
 {
     return juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), size, juce::Font::plain));
 }
+
+/** Neon look: a stroke with a soft halo of its own colour, built from wider, fainter
+    strokes underneath (cheap, and works in every JUCE renderer). */
+inline void strokeGlow (juce::Graphics& g, const juce::Path& path, juce::Colour colour, float width, float strength = 1.0f)
+{
+    const juce::PathStrokeType::JointStyle joint = juce::PathStrokeType::curved;
+    const juce::PathStrokeType::EndCapStyle cap = juce::PathStrokeType::rounded;
+    g.setColour (colour.withMultipliedAlpha (0.05f * strength));
+    g.strokePath (path, juce::PathStrokeType (width + 12.0f, joint, cap));
+    g.setColour (colour.withMultipliedAlpha (0.10f * strength));
+    g.strokePath (path, juce::PathStrokeType (width + 7.0f, joint, cap));
+    g.setColour (colour.withMultipliedAlpha (0.22f * strength));
+    g.strokePath (path, juce::PathStrokeType (width + 3.0f, joint, cap));
+    g.setColour (colour);
+    g.strokePath (path, juce::PathStrokeType (width, joint, cap));
+}
+
+/** A filled dot with the same kind of halo. */
+inline void fillGlowEllipse (juce::Graphics& g, juce::Rectangle<float> area, juce::Colour colour, float strength = 1.0f)
+{
+    g.setColour (colour.withMultipliedAlpha (0.08f * strength));
+    g.fillEllipse (area.expanded (8.0f));
+    g.setColour (colour.withMultipliedAlpha (0.16f * strength));
+    g.fillEllipse (area.expanded (4.5f));
+    g.setColour (colour.withMultipliedAlpha (0.30f * strength));
+    g.fillEllipse (area.expanded (2.0f));
+    g.setColour (colour);
+    g.fillEllipse (area);
+}
+
+/** Buttons with a neon outline when they are on. */
+class NeonLook final : public juce::LookAndFeel_V4
+{
+public:
+    void drawButtonBackground (juce::Graphics& g, juce::Button& button, const juce::Colour&, bool over, bool down) override
+    {
+        const auto area = button.getLocalBounds().toFloat().reduced (1.0f);
+        const bool on = button.getToggleState();
+        const float alpha = button.isEnabled() ? 1.0f : 0.45f;
+        g.setColour ((down ? lineStrong : over ? raised.brighter (0.08f) : raised).withMultipliedAlpha (alpha));
+        g.fillRoundedRectangle (area, 7.0f);
+        if (on)
+        {
+            g.setColour (accent.withAlpha (0.10f));
+            g.fillRoundedRectangle (area, 7.0f);
+            g.setColour (accent.withAlpha (0.18f));
+            g.drawRoundedRectangle (area.expanded (0.5f), 7.5f, 3.0f);
+            g.setColour (accent);
+            g.drawRoundedRectangle (area, 7.0f, 1.2f);
+        }
+        else
+        {
+            g.setColour ((over ? lineStrong : line).withMultipliedAlpha (alpha));
+            g.drawRoundedRectangle (area, 7.0f, 1.0f);
+        }
+    }
+};
 
 /** Upper-case section label, e.g. "FREQ". */
 inline void drawLabel (juce::Graphics& g, const juce::String& text, juce::Rectangle<int> area, juce::Justification just = juce::Justification::centredLeft)

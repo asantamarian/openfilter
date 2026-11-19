@@ -46,8 +46,7 @@ void Dial::paint (juce::Graphics& g)
         const float to = bipolar ? start + (end - start) * juce::jmax (v, 0.5f) : start + (end - start) * v;
         juce::Path value;
         value.addCentredArc (centre.x, centre.y, radius, radius, 0.0f, from, juce::jmax (to, from + 0.02f), true);
-        g.setColour (colour.withMultipliedAlpha (alpha));
-        g.strokePath (value, stroke);
+        theme::strokeGlow (g, value, colour.withMultipliedAlpha (alpha), 4.0f, alpha);
 
         g.setColour (theme::text.withMultipliedAlpha (alpha));
         g.setFont (theme::mono (12.0f));

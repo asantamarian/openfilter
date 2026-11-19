@@ -151,12 +151,16 @@ void OpenFilterEditor::paint (juce::Graphics& g)
     // Top bar.
     g.setColour (theme::panel);
     g.fillRect (topBar);
-    g.setColour (theme::line);
+    // A lit edge under the top bar.
+    g.setColour (theme::accent.withAlpha (0.06f));
+    g.fillRect (topBar.withTop (topBar.getBottom() - 3));
+    g.setColour (theme::accent.withAlpha (0.35f));
     g.fillRect (topBar.removeFromBottom (1));
 
     const auto logo = juce::Rectangle<float> (16.0f, 14.0f, 24.0f, 24.0f);
-    g.setColour (theme::accent);
-    g.drawEllipse (logo.reduced (1.5f), 1.5f);
+    juce::Path ring;
+    ring.addEllipse (logo.reduced (1.5f));
+    theme::strokeGlow (g, ring, theme::accent, 1.5f, 1.2f);
     juce::Path wave;
     wave.startNewSubPath (logo.getX() + 4.5f, logo.getY() + 14.5f);
     wave.cubicTo (logo.getX() + 8.0f, logo.getY() + 14.5f, logo.getX() + 8.5f, logo.getY() + 8.0f, logo.getX() + 12.0f, logo.getY() + 8.0f);
@@ -190,18 +194,31 @@ void OpenFilterEditor::paintMeter (juce::Graphics& g)
     g.setFont (theme::mono (11.0f));
     g.drawText (heldDb < -90.0f ? "-inf" : juce::String (heldDb, 1), outputColumn.withHeight (50).withTrimmedTop (30), juce::Justification::centredTop, false);
 
-    const int barW = 10, gap = 4;
+    // LED ladder: one lit segment per 1.5 dB from -60 to 0 dBFS, amber above -6, coral at the top.
+    const int barW = 11, gap = 4, segH = 4, segGap = 2;
+    const int segments = juce::jmax (1, meterArea.getHeight() / (segH + segGap));
     int x = meterArea.getCentreX() - barW - gap / 2;
     for (float db : meterDb)
     {
-        const juce::Rectangle<float> bar (static_cast<float> (x), static_cast<float> (meterArea.getY()), static_cast<float> (barW), static_cast<float> (meterArea.getHeight()));
-        g.setColour (theme::ground);
-        g.fillRoundedRectangle (bar, 3.0f);
-        const float level = juce::jlimit (0.0f, 1.0f, (db + 60.0f) / 60.0f);   // -60..0 dBFS
-        if (level > 0.0f)
+        const int lit = juce::roundToInt (juce::jlimit (0.0f, 1.0f, (db + 60.0f) / 60.0f) * static_cast<float> (segments));
+        for (int s = 0; s < segments; ++s)
         {
-            g.setColour (db > -0.1f ? theme::warn : theme::accent);
-            g.fillRoundedRectangle (bar.withTop (bar.getBottom() - bar.getHeight() * level), 3.0f);
+            const juce::Rectangle<float> seg (static_cast<float> (x), static_cast<float> (meterArea.getBottom() - (s + 1) * (segH + segGap) + segGap),
+                                              static_cast<float> (barW), static_cast<float> (segH));
+            const float level = static_cast<float> (s + 1) / static_cast<float> (segments);   // 0..1 up the ladder
+            const auto colour = level > 0.98f ? theme::band (0) : level > 0.9f ? theme::warn : theme::accent;
+            if (s < lit)
+            {
+                g.setColour (colour.withAlpha (0.18f));
+                g.fillRoundedRectangle (seg.expanded (2.0f), 2.0f);
+                g.setColour (colour);
+                g.fillRoundedRectangle (seg, 1.0f);
+            }
+            else
+            {
+                g.setColour (colour.withAlpha (0.10f));
+                g.fillRoundedRectangle (seg, 1.0f);
+            }
         }
         x += barW + gap;
     }

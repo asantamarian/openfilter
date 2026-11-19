@@ -28,7 +28,7 @@ private:
     void applyViewSettings();
 
     OpenFilterProcessor& processor;
-    juce::LookAndFeel_V4 look;
+    theme::NeonLook look;
     ResponseDisplay display;
     BandDock dock;
     Dial outputDial { "Out" };

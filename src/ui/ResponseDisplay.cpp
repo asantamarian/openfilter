@@ -276,8 +276,12 @@ void ResponseDisplay::paint (juce::Graphics& g)
     for (int i = -4; i <= 4; ++i)
         if (i != 0)
             g.fillRect (0.0f, std::round (dbToY (i * stepDb)), w, 1.0f);
-    g.setColour (theme::lineStrong);
-    g.fillRect (0.0f, std::round (dbToY (0.0)), w, 1.0f);
+    // The 0 dB line is lit.
+    const float zeroLine = std::round (dbToY (0.0));
+    g.setColour (theme::accent.withAlpha (0.07f));
+    g.fillRect (0.0f, zeroLine - 2.0f, w, 5.0f);
+    g.setColour (theme::accent.withAlpha (0.45f));
+    g.fillRect (0.0f, zeroLine, w, 1.0f);
 
     // Axis labels.
     g.setFont (theme::mono (10.0f));
@@ -299,27 +303,33 @@ void ResponseDisplay::paint (juce::Graphics& g)
         // Analyzer: input as a quiet fill, output as an accent line.
         if (! preFill.isEmpty())
         {
-            g.setColour (juce::Colour (0xff5B6B8A).withAlpha (0.2f));
+            g.setGradientFill (juce::ColourGradient (juce::Colour (0xff6C7BFF).withAlpha (0.26f), 0.0f, 0.0f,
+                                                     juce::Colour (0xff6C7BFF).withAlpha (0.04f), 0.0f, plotBottom, false));
             g.fillPath (preFill);
-            g.setColour (theme::accent.withAlpha (0.5f));
-            g.strokePath (postLine, juce::PathStrokeType (1.0f));
+            g.setColour (theme::accent.withAlpha (0.10f));
+            g.strokePath (postLine, juce::PathStrokeType (5.0f));
+            g.setColour (theme::accent.withAlpha (0.75f));
+            g.strokePath (postLine, juce::PathStrokeType (1.2f));
         }
 
         // Selected band: fill and outline in its colour.
         if (! selectedPath.isEmpty())
         {
             const auto c = theme::band (selected);
-            g.setColour (c.withAlpha (0.16f));
+            g.setColour (c.withAlpha (0.18f));
             g.fillPath (selectedFill);
-            g.setColour (c.withAlpha (0.9f));
-            g.strokePath (selectedPath, juce::PathStrokeType (1.25f));
+            theme::strokeGlow (g, selectedPath, c, 1.4f, 0.8f);
         }
 
-        // Composite curve with a soft halo.
-        g.setColour (theme::curve.withAlpha (0.12f));
-        g.strokePath (compositePath, juce::PathStrokeType (7.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        // Composite curve: a white-hot core inside an accent halo.
+        theme::strokeGlow (g, compositePath, theme::accent, 2.6f, 1.4f);
         g.setColour (theme::curve);
-        g.strokePath (compositePath, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.strokePath (compositePath, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+        // Faint scanlines over the plot.
+        g.setColour (juce::Colours::black.withAlpha (0.13f));
+        for (int y = 0; y < getHeight() - kAxisHeight; y += 3)
+            g.fillRect (0, y, getWidth(), 1);
     }
 
     // Nodes.
@@ -346,8 +356,7 @@ void ResponseDisplay::paint (juce::Graphics& g)
 
         if (b.on)
         {
-            g.setColour (c);
-            g.fillEllipse (circle);
+            theme::fillGlowEllipse (g, circle, c, i == selected ? 1.5f : 1.0f);
             g.setColour (theme::ground);
         }
         else   // bypassed: outline only
