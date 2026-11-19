@@ -89,7 +89,7 @@ public:
 
 private:
     struct BandPtrs { std::atomic<float>* used, *on, *shape, *slope, *freq, *gain, *q, *place,
-                                        * dyn, *range, *thr, *athr, *ratio, *knee, *atk, *rel, *trig, *sc, *lin, *smode, *sres; };
+                                        * dyn, *range, *thr, *athr, *ratio, *knee, *atk, *rel, *trig, *sc, *lin, *smode, *sres, *scfree, *scfreq, *scq; };
 
     void readSnapshot (ParamSnapshot&) const noexcept;
     // The phase mode changes latency; the host is told from the message thread.
@@ -103,7 +103,7 @@ private:
     Engine engine;
     std::array<BandPtrs, kMaxBands> bandPtrs {};
     std::atomic<float>* gainScalePtr = nullptr, *outGainPtr = nullptr, *outPanPtr = nullptr,
-                      * invertPtr = nullptr, *bypassPtr = nullptr, *deltaPtr = nullptr, *phaseModePtr = nullptr, *linQualityPtr = nullptr, *autoGainPtr = nullptr;
+                      * invertPtr = nullptr, *bypassPtr = nullptr, *deltaPtr = nullptr, *phaseModePtr = nullptr, *linQualityPtr = nullptr, *autoGainPtr = nullptr, *lookaheadPtr = nullptr, *scListenPtr = nullptr;
     juce::AudioProcessorParameter* bypassParam = nullptr;
     std::vector<double> work[2];
     std::vector<float> tap;

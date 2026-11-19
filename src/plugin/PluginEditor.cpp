@@ -293,7 +293,11 @@ void OpenFilterEditor::applyViewSettings()
 
 void OpenFilterEditor::showViewMenu()
 {
-    juce::PopupMenu menu, scale, range, copy, history;
+    juce::PopupMenu menu, scale, range, copy, history, look;
+    const int lookNow = juce::roundToInt (processor.apvts.getRawParameterValue ("lookahead")->load());
+    const char* lookNames[] = { "Off", "2 ms", "5 ms", "10 ms" };
+    for (int i = 0; i < 4; ++i)
+        look.addItem (5000 + i, lookNames[i], true, i == lookNow);
     for (int percent : { 50, 75, 100, 125, 150, 200 })
         scale.addItem (1000 + percent, juce::String (percent) + " %", true, juce::roundToInt (processor.uiScale * 100.0f) == percent);
     for (int db : { 3, 6, 12, 30 })
@@ -314,6 +318,7 @@ void OpenFilterEditor::showViewMenu()
     menu.addSeparator();
     menu.addSubMenu ("Display range", range);
     menu.addSubMenu ("Interface size", scale);
+    menu.addSubMenu ("Dynamics lookahead", look);
     menu.addSeparator();
     menu.addSubMenu ("Slots", copy);
     menu.addSubMenu ("History", history);
@@ -326,6 +331,11 @@ void OpenFilterEditor::showViewMenu()
         auto& proc = safe->processor;
         if (result == 1) proc.tableOpen = ! proc.tableOpen;
         else if (result == 2) proc.analyzerOn = ! proc.analyzerOn;
+        else if (result >= 5000)
+        {
+            if (auto* p = proc.apvts.getParameter ("lookahead"))
+                p->setValueNotifyingHost (p->convertTo0to1 (static_cast<float> (result - 5000)));
+        }
         else if (result >= 4000) { for (int i = 0; i <= result - 4000; ++i) proc.undo.undo(); }
         else if (result >= 3000) proc.copyActiveSlotTo (result - 3000);
         else if (result >= 2000) proc.displayRangeDb = result - 2000;

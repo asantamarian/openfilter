@@ -51,6 +51,8 @@ struct DynParams
     double releaseMs = 120.0;
     bool below = false;          // act when the level is under the threshold
     bool external = false;       // listen to the sidechain input instead of the plugin input
+    bool freeFilter = false;     // detector listens at its own frequency and Q, not the band's
+    double freeFreq = 1000.0, freeQ = 1.0;
     bool spectral = false;       // work per frequency bin instead of on the whole band
     bool resonance = true;       // spectral: judge each bin against its surroundings, not a level
     double resolutionOct = 1.0 / 6.0;   // spectral: smoothing of the per-bin gains across frequency
@@ -103,6 +105,8 @@ struct ParamSnapshot
     int phaseMode = 0;       // 0 zero latency, 1 natural, 2 linear, 3 mixed
     int linQuality = 1;      // 0 low .. 4 max: length of the linear-phase kernel
     int autoGain = 0;        // 0 off, 1 from the curve, 2 loudness matched
+    int lookahead = 0;       // 0 off, 1..3: 2, 5, 10 ms. Delays the audio, not the detectors
+    bool detectorListen = false;   // solo plays the band's detector signal instead of its region
 
     /** True when any band slot is set to Spectral: the spectral stage and its latency are in. */
     bool wantsSpectral() const noexcept

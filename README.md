@@ -23,7 +23,7 @@ Milestone M1 (static EQ, zero latency) is built and M2 (full UI) is under way. B
 | Band table with editable cells, A/B/C/D slots, View menu (interface size, display range, analyzer on/off, undo history) | Built (M2) |
 | Dynamic bands with the internal detector: threshold (manual or auto), range, ratio, knee, attack, release, trigger above or below (M3) | Built |
 | External sidechain per band, band solo (button, or hold S in the display) | Built |
-| Lookahead, free detector filter, sidechain listen (rest of M3) | Not yet |
+| Lookahead (2, 5 or 10 ms), detector listen (Key button), free detector filter (parameters only, no control in the dock yet) | Built |
 | Linear phase (five kernel lengths) and Mixed phase (per-band choice), designed on a worker thread (M4) | Built |
 | Dynamics for bands in the linear-phase path | Not yet |
 | Auto gain: estimated from the curve, or loudness matched (K-weighted, input against output) | Built (M5) |

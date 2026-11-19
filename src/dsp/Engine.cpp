@@ -126,7 +126,10 @@ void BandProcessor::update (const BandParams& target, bool mono) noexcept
     {
         if (! wasDetecting)
             detector.reset();
-        if (! wasDetecting || redesign || target.shape != last.shape)
+        // The detector follows the band, or listens where it is told to.
+        if (target.dyn.freeFilter)
+            detector.setFilter (Shape::Bell, target.dyn.freeFreq, target.dyn.freeQ);
+        else if (! wasDetecting || redesign || target.shape != last.shape || last.dyn.freeFilter)
             detector.setFilter (target.shape, std::exp (logFreq), std::exp (logQ));
         dynNow = detector.update (target.dyn, target.dyn.rangeDb);
     }
@@ -266,9 +269,15 @@ int Engine::oversamplingFor (int phaseMode, double sampleRate) noexcept
     return sampleRate < 70000.0 ? 4 : sampleRate < 140000.0 ? 2 : 1;
 }
 
-int Engine::latencyFor (int phaseMode, double sampleRate, int linQuality, bool withSpectral) noexcept
+int Engine::lookaheadSamples (int setting, double sampleRate) noexcept
 {
-    const int extra = withSpectral ? SpectralLane::frameFor (sampleRate) : 0;
+    constexpr double ms[] = { 0.0, 2.0, 5.0, 10.0 };
+    return static_cast<int> (std::lround (ms[std::clamp (setting, 0, 3)] * 0.001 * sampleRate));
+}
+
+int Engine::latencyFor (int phaseMode, double sampleRate, int linQuality, bool withSpectral, int lookaheadSetting) noexcept
+{
+    const int extra = (withSpectral ? SpectralLane::frameFor (sampleRate) : 0) + lookaheadSamples (lookaheadSetting, sampleRate);
     if (phaseMode == 2 || phaseMode == 3)
         return FirLane::latencyFor (linQuality, sampleRate) + extra;
     switch (oversamplingFor (phaseMode, sampleRate))
@@ -330,29 +339,36 @@ void Engine::prepare (double sampleRate, int maxBlock, int)
     kWet.prepare (sampleRate);
     loudCoef = 1.0 - std::exp (-1.0 / (1.5 * sampleRate));   // about a 3 s window
     int delaySize = 256;
-    while (delaySize < FirLane::latencyFor (4, sampleRate) + SpectralLane::frameFor (sampleRate) + 16)
+    while (delaySize < FirLane::latencyFor (4, sampleRate) + SpectralLane::frameFor (sampleRate) + lookaheadSamples (3, sampleRate) + 16)
         delaySize <<= 1;
     delayMask = delaySize - 1;
     for (auto& ch : stages)
         ch.delay.assign (static_cast<size_t> (delaySize), 0.0);
 
     doneSerial.store (mailSerial.load());
-    configure (phaseMode, linQuality, spectralOn);
+    for (auto& b : lookBuf)
+        b.assign (static_cast<size_t> (lookaheadSamples (3, sampleRate) + 1), 0.0);
+    configure (phaseMode, linQuality, spectralOn, lookahead);
     reset();
 
     workerRunning.store (true);
     worker = std::thread ([this] { workerLoop(); });
 }
 
-void Engine::configure (int mode, int quality, bool withSpectral) noexcept
+void Engine::configure (int mode, int quality, bool withSpectral, int lookaheadSetting) noexcept
 {
     phaseMode = mode;
     linQuality = quality;
     spectralOn = withSpectral;
+    lookahead = lookaheadSetting;
+    lookaheadLen = lookaheadSamples (lookaheadSetting, fs);
+    lookPos = 0;
+    for (auto& b : lookBuf)
+        std::fill (b.begin(), b.end(), 0.0);
     spectral.reset();
     firMode = mode == 2 || mode == 3;
     factor = oversamplingFor (mode, fs);
-    latency.store (latencyFor (mode, fs, quality, withSpectral), std::memory_order_relaxed);
+    latency.store (latencyFor (mode, fs, quality, withSpectral, lookaheadSetting), std::memory_order_relaxed);
     for (auto& ch : stages)
     {
         ch.first.design (factor == 4 ? kSteepHalf : kWideHalf);
@@ -444,12 +460,14 @@ void Engine::updateTargets (const ParamSnapshot& params, bool mono) noexcept
 {
     const int quality = std::clamp (params.linQuality, 0, 4);
     const bool wantSpectral = params.wantsSpectral();
-    if (params.phaseMode != phaseMode || (firMode && quality != linQuality) || wantSpectral != spectralOn)
+    const int wantLookahead = std::clamp (params.lookahead, 0, 3);
+    if (params.phaseMode != phaseMode || (firMode && quality != linQuality) || wantSpectral != spectralOn || wantLookahead != lookahead)
     {
-        // A different phase mode, kernel length, or the first or last spectral band changes
-        // latency. None of these is automatable, so a short fade-in after the switch is enough.
+        // A different phase mode, kernel length, lookahead, or the first or last spectral band
+        // changes latency. None of these is automatable, so a short fade-in after the switch
+        // is enough.
         const bool wasFresh = fresh;
-        configure (params.phaseMode, quality, wantSpectral);
+        configure (params.phaseMode, quality, wantSpectral, wantLookahead);
         modeFade = wasFresh ? 1.0 : 0.0;
     }
     if (spectralOn)
@@ -564,11 +582,16 @@ void Engine::updateSolo (const ParamSnapshot& params) noexcept
     // The part of the spectrum the band works on: a band-pass for bells, notches and band
     // passes; for shelves and cuts, the side of the corner they change.
     const auto& b = params.bands[static_cast<size_t> (request)];
-    const double w = 2.0 * std::numbers::pi * std::clamp (b.freq, 10.0, 0.45 * fs) / fs;
+    // Detector listen: hear exactly what the band's detector hears, from the source it uses.
+    const bool listen = params.detectorListen && b.dyn.on && canBeDynamic (b.shape);
+    const bool freeFilter = listen && b.dyn.freeFilter;
+    soloFromSidechain = listen && b.dyn.external;
+    const double centre = freeFilter ? b.dyn.freeFreq : b.freq;
+    const double w = 2.0 * std::numbers::pi * std::clamp (centre, 10.0, 0.45 * fs) / fs;
     const double cs = std::cos (w), sn = std::sin (w);
-    const bool low = b.shape == Shape::LowShelf || b.shape == Shape::LowCut;
-    const bool high = b.shape == Shape::HighShelf || b.shape == Shape::HighCut || b.shape == Shape::TiltShelf;
-    const double q = (low || high) ? 0.7071 : std::clamp (b.q, 0.5, 12.0);
+    const bool low = ! freeFilter && (b.shape == Shape::LowShelf || (! listen && b.shape == Shape::LowCut));
+    const bool high = ! freeFilter && (b.shape == Shape::HighShelf || b.shape == Shape::TiltShelf || (! listen && b.shape == Shape::HighCut));
+    const double q = (low || high) ? 0.7071 : listen ? std::clamp (freeFilter ? b.dyn.freeQ : b.q, 0.5, 8.0) : std::clamp (b.q, 0.5, 12.0);
     const double alpha = sn / (2.0 * q), a0 = 1.0 + alpha;
     double c0, c1, c2;
     if (low)        { c0 = 0.5 * (1.0 - cs); c1 = 1.0 - cs; c2 = c0; }
@@ -673,6 +696,24 @@ void Engine::processSegment (double* const* io, int numChannels, int offset, int
             else
                 b.detect (left, right, n);
         }
+
+    // Lookahead: the audio is held back so the detectors, which just heard it, are early.
+    if (lookaheadLen > 0)
+    {
+        const int size = static_cast<int> (lookBuf[0].size());
+        for (int i = 0; i < n; ++i)
+        {
+            const int w = lookPos, r = (lookPos + size - lookaheadLen) % size;
+            lookBuf[0][static_cast<size_t> (w)] = left[i];
+            left[i] = lookBuf[0][static_cast<size_t> (r)];
+            if (right != nullptr)
+            {
+                lookBuf[1][static_cast<size_t> (w)] = right[i];
+                right[i] = lookBuf[1][static_cast<size_t> (r)];
+            }
+            lookPos = (lookPos + 1) % size;
+        }
+    }
 
     // Dry signal, delayed by the latency: for bypass, delta, and the idle path.
     if (lat > 0)
@@ -843,7 +884,12 @@ void Engine::processSegment (double* const* io, int numChannels, int offset, int
         {
             soloMix = soloTarget > soloMix ? std::min (soloTarget, soloMix + step) : std::max (soloTarget, soloMix - step);
             double a = dryL[i], b = right != nullptr ? dryR[i] : dryL[i];
-            if (right != nullptr)
+            if (soloFromSidechain && scLeft != nullptr)   // the external key, as the detector hears it
+            {
+                a = scLeft[i];
+                b = scRight != nullptr ? scRight[i] : scLeft[i];
+            }
+            else if (right != nullptr)
             {
                 // Audition what the band's channel hears.
                 if (soloPlace == Placement::Mid)        a = b = 0.5 * (dryL[i] + dryR[i]);

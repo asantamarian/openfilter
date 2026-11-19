@@ -83,7 +83,8 @@ public:
     /** Latency a mode will have at a sample rate: lets the plugin tell the host from the
         message thread. Phase modes: 0 zero latency, 1 natural, 2 linear, 3 mixed. linQuality
         (0..4) only matters for linear and mixed. */
-    static int latencyFor (int phaseMode, double sampleRate, int linQuality = 1, bool spectral = false) noexcept;
+    static int latencyFor (int phaseMode, double sampleRate, int linQuality = 1, bool spectral = false, int lookahead = 0) noexcept;
+    static int lookaheadSamples (int lookahead, double sampleRate) noexcept;
 
     /** For tests: true once the linear-phase kernel matches the bands last sent to it. */
     bool linearSettled() const noexcept;
@@ -126,7 +127,7 @@ private:
     ParamSnapshot autoSeen {};
     bool autoSeenValid = false;
     std::atomic<float> autoGainShown { 0.0f };
-    void configure (int mode, int quality, bool withSpectral) noexcept;
+    void configure (int mode, int quality, bool withSpectral, int lookaheadSetting) noexcept;
     void postFirRequest (const ParamSnapshot& params) noexcept;
     void workerLoop();
     void stopWorker();
@@ -157,6 +158,9 @@ private:
     };
     SpectralLane spectral;
     bool spectralOn = false;
+    int lookahead = 0, lookaheadLen = 0, lookPos = 0;
+    std::vector<double> lookBuf[2];
+    bool soloFromSidechain = false;
     FirLane fir;
     bool firMode = false, firRepost = false;
     FirRequest lastRequest {}, mail {};

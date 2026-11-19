@@ -313,12 +313,16 @@ time and the detector is not.
 
 `sc_listen` routes the selected band's filtered detector signal to the output.
 
-**Built so far:** everything above with the internal detector or the external
-sidechain (per band; a band set to External falls back to the plugin input when
-no sidechain is connected), plus band solo. The detector filter is a plain
-12 dB/oct band-pass, low-pass or high-pass. The free detector filter, lookahead
-and sidechain listen are not built yet. In Natural mode the detector runs at the
-host rate on the undelayed input, which gives it about 0.8 ms of look-ahead at
+**Built:** everything above, with the internal detector or the external sidechain
+(per band; a band set to External falls back to the plugin input when no sidechain
+is connected), the free detector filter, lookahead, band solo and detector listen.
+The detector filter is a plain 12 dB/oct band-pass, low-pass or high-pass.
+Lookahead delays the audio by 2, 5 or 10 ms after the detectors have read it and
+adds that to the latency; measured with a 1 ms attack, the gain a burst meets is
+0 dB with no lookahead, -9.7 of -12 dB with 2 ms and the full -12 dB with 10 ms.
+Detector listen is solo with the detector's source and filter instead of the
+band's region. In Natural mode the detector runs at the host rate on the
+undelayed input, which gives it about 0.8 ms of look-ahead of its own at
 44.1/48 kHz. Verified by `tests/unit/dynamics_tests.cpp`.
 
 ## 8. Spectral bands

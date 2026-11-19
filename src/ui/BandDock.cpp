@@ -44,13 +44,30 @@ BandDock::BandDock (OpenFilterProcessor& p) : processor (p)
     };
     addAndMakeVisible (externalButton);
 
+    // Detector listen: solo, but playing what the band's detector hears (its filter, and the
+    // sidechain when the band is set to it).
+    listenButton.setTitle ("Listen to the detector");
+    listenButton.setTooltip ("Hear what this band's detector hears: the track or the sidechain, through the detector's filter. For setting up a dynamic band.");
+    listenButton.onClick = [this]
+    {
+        auto* listen = processor.apvts.getParameter ("sc_listen");
+        const bool turningOn = ! (listen->getValue() > 0.5f && processor.soloBand() >= 0);
+        listen->setValueNotifyingHost (turningOn ? 1.0f : 0.0f);
+        processor.setSoloBand (turningOn ? band : -1);
+    };
+    addAndMakeVisible (listenButton);
+
     linearButton.setClickingTogglesState (true);
     linearButton.setTitle ("Linear phase for this band");
     linearButton.setTooltip ("In Mixed phase mode: realise this band with linear phase. Its dynamics do not run while it is linear.");
     addChildComponent (linearButton);
 
     soloButton.setTooltip ("Hear only the part of the signal this band works on. Also: hold S in the display.");
-    soloButton.onClick = [this] { processor.setSoloBand (processor.soloBand() >= 0 || band < 0 ? -1 : band); };
+    soloButton.onClick = [this]
+    {
+        processor.apvts.getParameter ("sc_listen")->setValueNotifyingHost (0.0f);   // plain solo, not the detector
+        processor.setSoloBand (processor.soloBand() >= 0 || band < 0 ? -1 : band);
+    };
     addAndMakeVisible (soloButton);
 
     gainDial.setBipolar (true);
@@ -90,7 +107,11 @@ BandDock::BandDock (OpenFilterProcessor& p) : processor (p)
     setBand (-1);
 }
 
-BandDock::~BandDock() { processor.setSoloBand (-1); }   // solo never outlives the editor
+BandDock::~BandDock()   // solo and detector listen never outlive the editor
+{
+    processor.setSoloBand (-1);
+    processor.apvts.getParameter ("sc_listen")->setValueNotifyingHost (0.0f);
+}
 
 void BandDock::setBand (int newBand)
 {
@@ -193,7 +214,11 @@ void BandDock::refresh()
         slopeBox.setEnabled (b.shape != Shape::FlatTilt);
         bypassButton.setButtonText (b.on ? "Bypass" : "Enable");
     }
-    soloButton.setToggleState (band >= 0 && processor.soloBand() == band, juce::dontSendNotification);
+    const bool listening = processor.apvts.getRawParameterValue ("sc_listen")->load() > 0.5f;
+    const bool soloed = band >= 0 && processor.soloBand() == band;
+    soloButton.setToggleState (soloed && ! listening, juce::dontSendNotification);
+    listenButton.setToggleState (soloed && listening, juce::dontSendNotification);
+    listenButton.setEnabled (band >= 0 && current.dyn.on && canBeDynamic (current.shape));
     if (changed)
         repaint();
 }
@@ -270,13 +295,15 @@ void BandDock::resized()
     dialsArea = area;
 
     auto buttons = chipsArea.withTop (chipsArea.getBottom() - 28);
-    soloButton.setBounds (buttons.removeFromLeft (60));
-    buttons.removeFromLeft (6);
-    bypassButton.setBounds (buttons.removeFromLeft (76));
-    buttons.removeFromLeft (6);
-    deleteButton.setBounds (buttons.removeFromLeft (76));
-    buttons.removeFromLeft (6);
-    linearButton.setBounds (buttons.removeFromLeft (48));
+    soloButton.setBounds (buttons.removeFromLeft (52));
+    buttons.removeFromLeft (5);
+    listenButton.setBounds (buttons.removeFromLeft (44));
+    buttons.removeFromLeft (5);
+    bypassButton.setBounds (buttons.removeFromLeft (70));
+    buttons.removeFromLeft (5);
+    deleteButton.setBounds (buttons.removeFromLeft (68));
+    buttons.removeFromLeft (5);
+    linearButton.setBounds (buttons.removeFromLeft (44));
 
     // Shape, slope and channel stacked.
     auto s = shapeArea;
