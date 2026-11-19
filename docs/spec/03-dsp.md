@@ -297,12 +297,13 @@ time and the detector is not.
 
 `sc_listen` routes the selected band's filtered detector signal to the output.
 
-**Built so far:** everything above with the internal detector (the plugin input).
-The detector filter is a plain 12 dB/oct band-pass, low-pass or high-pass; the
-free detector filter, the external sidechain, lookahead and sidechain listen are
-not built yet. In Natural mode the detector runs at the host rate on the undelayed
-input, which gives it about 0.8 ms of look-ahead at 44.1/48 kHz. Verified by
-`tests/unit/dynamics_tests.cpp`.
+**Built so far:** everything above with the internal detector or the external
+sidechain (per band; a band set to External falls back to the plugin input when
+no sidechain is connected), plus band solo. The detector filter is a plain
+12 dB/oct band-pass, low-pass or high-pass. The free detector filter, lookahead
+and sidechain listen are not built yet. In Natural mode the detector runs at the
+host rate on the undelayed input, which gives it about 0.8 ms of look-ahead at
+44.1/48 kHz. Verified by `tests/unit/dynamics_tests.cpp`.
 
 ## 8. Spectral bands
 
@@ -383,4 +384,4 @@ Both are unity gain for small signals. Voicing is research item R-4.
 | R-4 | Character voicing | Ship Clean only in v1.0 |
 | R-5 | Error of the parallel dynamic FIR form with overlapping bands | Serial form with added latency |
 | R-6 | Zero-latency accuracy near Nyquist and for high-order shapes (§3 table). Natural mode (§5) is the accurate option and is built. Remaining candidates for the zero-latency path: fit the denominator too (rational least squares in the same magnitude basis), or Orfanidis-style closed forms for bells | Leave Zero Latency as it is and document the limit |
-| R-7 | LV2: JUCE's client wrapper reads every declared input port, so an unconnected optional sidechain port is a null dereference (seen in the host test). Options: patch the wrapper to treat null ports as silence, or ship LV2 with the sidechain always required | Ship the LV2 build without an external sidechain |
+| R-7 | LV2: JUCE's client wrapper reads every declared input port, so an unconnected optional sidechain port is a null dereference. **Resolved** by making the sidechain ports required in the LV2 build only (01 section 7). An LV2 host must therefore always feed them, silence included | Patch the wrapper to treat null ports as silence |

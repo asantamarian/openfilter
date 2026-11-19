@@ -22,7 +22,8 @@ Milestone M1 (static EQ, zero latency) is built and M2 (full UI) is under way. B
 | Natural phase mode: filters at 4x, accurate to 20 kHz, 76 samples of latency at 44.1/48 kHz | Built (brought forward from M4) |
 | Band table with editable cells, A/B/C/D slots, View menu (interface size, display range, analyzer on/off, undo history) | Built (M2) |
 | Dynamic bands with the internal detector: threshold (manual or auto), range, ratio, knee, attack, release, trigger above or below (M3) | Built |
-| External sidechain, band solo, lookahead (rest of M3) | Not yet |
+| External sidechain per band, band solo (button, or hold S in the display) | Built |
+| Lookahead, free detector filter, sidechain listen (rest of M3) | Not yet |
 | Linear and mixed phase, spectral bands, auto gain, instance linking, EQ match, CLAP, accessibility pass (M4 to M7) | Not yet |
 
 Known gaps:
@@ -33,6 +34,8 @@ Known gaps:
 - Tested on Linux only. Windows and macOS builds have not been tried.
 - Validated with our own host test, not yet with pluginval or in a DAW.
 - The LV2 editor has not been exercised (the headless host test cannot embed it).
+- In LV2 the sidechain input is a required port (a workaround for a crash in JUCE's
+  LV2 wrapper), so the plugin shows four inputs there.
 
 ## Build and test
 

@@ -6,7 +6,12 @@ namespace of
 OpenFilterProcessor::OpenFilterProcessor()
     : AudioProcessor (BusesProperties()
                           .withInput ("Input", juce::AudioChannelSet::stereo(), true)
-                          .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+                          .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
+                          // The sidechain is optional, except in LV2: JUCE's LV2 wrapper reads
+                          // every declared input port and crashes on an unconnected optional
+                          // one, so there the ports are required and hosts always connect them.
+                          .withInput ("Sidechain", juce::AudioChannelSet::stereo(),
+                                      juce::PluginHostType::getPluginLoadedAs() == wrapperType_LV2)),
       apvts (*this, &undo, "Params", params::createLayout())
 {
     const auto raw = [this] (const juce::String& id) { return apvts.getRawParameterValue (id); };
@@ -17,7 +22,7 @@ OpenFilterProcessor::OpenFilterProcessor()
         bandPtrs[static_cast<size_t> (b)] = { raw (id ("used")), raw (id ("on")), raw (id ("shape")), raw (id ("slope")),
                                               raw (id ("freq")), raw (id ("gain")), raw (id ("q")), raw (id ("place")),
                                               raw (id ("dyn")), raw (id ("range")), raw (id ("thr")), raw (id ("athr")), raw (id ("ratio")),
-                                              raw (id ("knee")), raw (id ("atk")), raw (id ("rel")), raw (id ("trig")) };
+                                              raw (id ("knee")), raw (id ("atk")), raw (id ("rel")), raw (id ("trig")), raw (id ("sc")) };
     }
     gainScalePtr = raw ("gain_scale");
     outGainPtr = raw ("out_gain");
@@ -50,6 +55,8 @@ void OpenFilterProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     for (auto& w : work)
         w.assign (static_cast<size_t> (maxBlock), 0.0);
     tap.assign (static_cast<size_t> (maxBlock), 0.0f);
+    for (auto& w : scWork)
+        w.assign (static_cast<size_t> (maxBlock), 0.0);
     engine.prepare (sampleRate, maxBlock, getMainBusNumOutputChannels());
     updateLatency();
 }
@@ -59,9 +66,10 @@ bool OpenFilterProcessor::isBusesLayoutSupported (const BusesLayout& layouts) co
     const auto main = layouts.getMainOutputChannelSet();
     if (main != layouts.getMainInputChannelSet())
         return false;
-    // The sidechain input bus arrives with the dynamics milestone (M3); see research item
-    // R-7 in docs/spec/03-dsp.md before adding it.
-    return main == juce::AudioChannelSet::mono() || main == juce::AudioChannelSet::stereo();
+    if (main != juce::AudioChannelSet::mono() && main != juce::AudioChannelSet::stereo())
+        return false;
+    const auto sc = layouts.getChannelSet (true, 1);
+    return sc.isDisabled() || sc == juce::AudioChannelSet::mono() || sc == juce::AudioChannelSet::stereo();
 }
 
 void OpenFilterProcessor::readSnapshot (ParamSnapshot& s) const noexcept
@@ -89,6 +97,7 @@ void OpenFilterProcessor::readSnapshot (ParamSnapshot& s) const noexcept
         out.dyn.attackMs = f (p.atk);
         out.dyn.releaseMs = f (p.rel);
         out.dyn.below = f (p.trig) > 0.5f;
+        out.dyn.external = f (p.sc) > 0.5f;
     }
     s.phaseMode = juce::roundToInt (f (phaseModePtr));
     s.gainScale = f (gainScalePtr) * 0.01;
@@ -111,6 +120,13 @@ void OpenFilterProcessor::process (juce::AudioBuffer<Sample>& buffer)
     ParamSnapshot snapshot;
     readSnapshot (snapshot);
 
+    // Sidechain input, when the host has enabled that bus.
+    const auto* scBus = getBus (true, 1);
+    const int scChannels = scBus != nullptr && scBus->isEnabled() ? juce::jmin (2, scBus->getNumberOfChannels()) : 0;
+    const int scFirst = scChannels > 0 ? scBus->getChannelIndexInProcessBlockBuffer (0) : 0;
+    const bool scUsable = scChannels > 0 && scFirst + scChannels <= buffer.getNumChannels();
+    sidechainLive.store (scUsable, std::memory_order_relaxed);
+
     // Hosts may send more samples than they announced: work in chunks of maxBlock.
     for (int pos = 0; pos < total; pos += maxBlock)
     {
@@ -131,9 +147,18 @@ void OpenFilterProcessor::process (juce::AudioBuffer<Sample>& buffer)
             fifo.push (tap.data(), static_cast<size_t> (n));
         };
 
+        const double* sc[2] = { scWork[0].data(), scWork[1].data() };
+        if (scUsable)
+            for (int ch = 0; ch < scChannels; ++ch)
+            {
+                const Sample* src = buffer.getReadPointer (scFirst + ch, pos);
+                for (int i = 0; i < n; ++i)
+                    scWork[ch][static_cast<size_t> (i)] = static_cast<double> (src[i]);
+            }
+
         if (analyse)
             pushTap (preFifo);
-        engine.process (io, channels, n, snapshot);
+        engine.process (io, channels, n, snapshot, scUsable ? sc : nullptr, scUsable ? scChannels : 0);
         if (analyse)
             pushTap (postFifo);
 

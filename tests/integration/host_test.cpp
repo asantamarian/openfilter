@@ -100,7 +100,8 @@ void testPlugin (juce::AudioPluginFormatManager& formats, const juce::String& pa
 
     juce::MidiBuffer midi;
     juce::Random random (42);
-    const int channels = juce::jmax (2, plugin->getTotalNumInputChannels(), plugin->getTotalNumOutputChannels());
+    // Wide enough for the sidechain whether or not it is enabled.
+    const int channels = juce::jmax (4, plugin->getTotalNumInputChannels(), plugin->getTotalNumOutputChannels());
 
     // 1. With no bands in use the plugin must pass audio through unchanged.
     plugin->prepareToPlay (48000.0, 512);
@@ -188,6 +189,27 @@ void testPlugin (juce::AudioPluginFormatManager& formats, const juce::String& pa
     }
     else
         check (false, "parameter not found: Phase Mode");
+
+    // 2c. Sidechain: optional in VST3 (off until the host enables it), always present in LV2.
+    std::printf ("    input buses: %d, total input channels: %d\n", plugin->getBusCount (true), plugin->getTotalNumInputChannels());
+    check (plugin->getBusCount (true) == 2, "main input plus a sidechain input bus");
+    if (desc.pluginFormatName == "VST3")
+    {
+        check (plugin->getTotalNumInputChannels() == 2, "VST3 sidechain is off by default");
+        plugin->releaseResources();
+        const bool enabled = plugin->enableAllBuses();
+        check (enabled && plugin->getTotalNumInputChannels() == 4, "VST3 sidechain can be enabled");
+        plugin->prepareToPlay (48000.0, 512);
+        juce::AudioBuffer<float> wide (4, 512);
+        bool ok = true;
+        for (int block = 0; block < 20; ++block)
+        {
+            fillNoise (wide, random);
+            plugin->processBlock (wide, midi);
+            ok = ok && finite (wide, 2, 512);
+        }
+        check (ok, "processing with the sidechain connected");
+    }
 
     // 3. Random block sizes, sample rates and parameter storms: never NaN or Inf.
     {

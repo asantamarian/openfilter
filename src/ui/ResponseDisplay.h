@@ -35,6 +35,8 @@ public:
     void mouseDoubleClick (const juce::MouseEvent&) override;
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     bool keyPressed (const juce::KeyPress&) override;
+    bool keyStateChanged (bool isKeyDown) override;
+    void focusLost (FocusChangeType) override;
 
 private:
     // Coordinate mapping: 16 Hz to 24 kHz, log; gain linear in dB around the 0 dB line.
@@ -54,7 +56,7 @@ private:
     double scale = 1.0;
     double rangeDb = 12.0;
     int selected = -1, hovered = -1, dragging = -1;
-    bool dragHasGain = false;
+    bool dragHasGain = false, soloHeld = false;
     juce::Point<float> dragOffset;
     juce::Path compositePath, selectedPath, selectedFill, rangePath;
     std::array<float, kMaxBands> liveDyn {};

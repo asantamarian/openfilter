@@ -30,6 +30,20 @@ BandDock::BandDock (OpenFilterProcessor& p) : processor (p)
     autoButton.setTooltip ("Auto threshold follows the long-term level around the band, so the band reacts the same on quiet and loud material. The Thresh dial then sets how far above or below that level it starts.");
     addAndMakeVisible (autoButton);
 
+    externalButton.setTooltip ("Listen to the sidechain input instead of this track. Route a signal to the plugin's sidechain in your host first; without one the band keeps listening to this track.");
+    externalButton.onClick = [this]
+    {
+        if (band < 0)
+            return;
+        processor.undo.beginNewTransaction ("Detector source");
+        processor.setBandValue (band, "sc", current.dyn.external ? 0.0f : 1.0f);
+    };
+    addAndMakeVisible (externalButton);
+
+    soloButton.setTooltip ("Hear only the part of the signal this band works on. Also: hold S in the display.");
+    soloButton.onClick = [this] { processor.setSoloBand (processor.soloBand() >= 0 || band < 0 ? -1 : band); };
+    addAndMakeVisible (soloButton);
+
     gainDial.setBipolar (true);
     rangeDial.setBipolar (true);
     for (auto* d : { &freqDial, &gainDial, &qDial, &thrDial, &rangeDial, &ratioDial, &atkDial, &relDial })
@@ -65,9 +79,13 @@ BandDock::BandDock (OpenFilterProcessor& p) : processor (p)
     setBand (-1);
 }
 
+BandDock::~BandDock() { processor.setSoloBand (-1); }   // solo never outlives the editor
+
 void BandDock::setBand (int newBand)
 {
     band = newBand;
+    if (processor.soloBand() >= 0)   // solo follows the selection
+        processor.setSoloBand (band);
     shapeAttachment.reset();
     slopeAttachment.reset();
     placeAttachment.reset();
@@ -96,7 +114,7 @@ void BandDock::setBand (int newBand)
     const auto colour = has ? theme::band (band) : theme::lineStrong;
     for (auto* d : { &freqDial, &gainDial, &qDial, &thrDial, &rangeDial, &ratioDial, &atkDial, &relDial })
         d->setArcColour (colour);
-    for (auto* c : std::initializer_list<juce::Component*> { &shapeBox, &slopeBox, &placeBox, &dynBox, &autoButton, &bypassButton, &deleteButton })
+    for (auto* c : std::initializer_list<juce::Component*> { &shapeBox, &slopeBox, &placeBox, &dynBox, &autoButton, &externalButton, &soloButton, &bypassButton, &deleteButton })
         c->setEnabled (has);
 
     refresh();
@@ -125,6 +143,8 @@ void BandDock::refresh()
         const bool dynOn = canDyn && b.dyn.on;
         dynBox.setEnabled (canDyn);
         autoButton.setEnabled (dynOn);
+        externalButton.setEnabled (dynOn);
+        externalButton.setToggleState (dynOn && b.dyn.external, juce::dontSendNotification);
         for (auto* d : { &thrDial, &rangeDial, &ratioDial, &atkDial, &relDial })
             d->setDimmed (! dynOn);
 
@@ -141,6 +161,7 @@ void BandDock::refresh()
         slopeBox.setEnabled (b.shape != Shape::FlatTilt);
         bypassButton.setButtonText (b.on ? "Bypass" : "Enable");
     }
+    soloButton.setToggleState (band >= 0 && processor.soloBand() == band, juce::dontSendNotification);
     if (changed)
         repaint();
 }
@@ -217,6 +238,8 @@ void BandDock::resized()
     dialsArea = area;
 
     auto buttons = chipsArea.withTop (chipsArea.getBottom() - 28);
+    soloButton.setBounds (buttons.removeFromLeft (72));
+    buttons.removeFromLeft (6);
     bypassButton.setBounds (buttons.removeFromLeft (84));
     buttons.removeFromLeft (6);
     deleteButton.setBounds (buttons.removeFromLeft (84));
@@ -245,7 +268,9 @@ void BandDock::resized()
     auto modeColumn = d.removeFromLeft (96);
     dynBox.setBounds (modeColumn.removeFromTop (30));
     modeColumn.removeFromTop (10);
-    autoButton.setBounds (modeColumn.removeFromTop (28).withWidth (64));
+    autoButton.setBounds (modeColumn.removeFromTop (28));
+    modeColumn.removeFromTop (6);
+    externalButton.setBounds (modeColumn.removeFromTop (28));
     d.removeFromLeft (8);
     for (auto* dial : { &thrDial, &rangeDial, &ratioDial, &atkDial, &relDial })
     {

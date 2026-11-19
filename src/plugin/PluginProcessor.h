@@ -54,6 +54,12 @@ public:
     void setBandValue (int band, const char* suffix, float plainValue);
 
     float takePeak (int channel) noexcept { return engine.takePeak (channel); }
+    /** Band audition (docs/spec/05-ui.md section 6.1). -1 for none. Never saved. */
+    void setSoloBand (int band) noexcept { engine.setSoloBand (band); }
+    int soloBand() const noexcept { return engine.soloBand(); }
+    /** True when the host has connected something to the sidechain input. */
+    bool hasSidechain() const noexcept { return sidechainLive.load (std::memory_order_relaxed); }
+
     /** Live dynamic gain of a band in dB, for the display. */
     float dynamicGainDb (int band) const noexcept { return engine.dynamicGainDb (band); }
 
@@ -82,7 +88,7 @@ public:
 
 private:
     struct BandPtrs { std::atomic<float>* used, *on, *shape, *slope, *freq, *gain, *q, *place,
-                                        * dyn, *range, *thr, *athr, *ratio, *knee, *atk, *rel, *trig; };
+                                        * dyn, *range, *thr, *athr, *ratio, *knee, *atk, *rel, *trig, *sc; };
 
     void readSnapshot (ParamSnapshot&) const noexcept;
     // The phase mode changes latency; the host is told from the message thread.
@@ -100,6 +106,8 @@ private:
     juce::AudioProcessorParameter* bypassParam = nullptr;
     std::vector<double> work[2];
     std::vector<float> tap;
+    std::vector<double> scWork[2];
+    std::atomic<bool> sidechainLive { false };
     int maxBlock = 512;
     int slot = 0;
     std::array<std::vector<float>, kNumSlots> slots;

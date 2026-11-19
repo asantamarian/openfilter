@@ -50,6 +50,7 @@ struct DynParams
     double attackMs = 10.0;
     double releaseMs = 120.0;
     bool below = false;          // act when the level is under the threshold
+    bool external = false;       // listen to the sidechain input instead of the plugin input
 
     bool operator== (const DynParams&) const = default;
 };

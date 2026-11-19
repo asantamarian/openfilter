@@ -25,6 +25,7 @@ public:
 
     /** Dynamic bands: feed the detector with the plugin input at the host rate. */
     bool wantsDetection() const noexcept { return detecting; }
+    bool wantsExternal() const noexcept { return last.dyn.external; }
     void detect (const double* left, const double* right, int n) noexcept { detector.process (left, right, n, last.place); }
     double dynamicGainDb() const noexcept { return detecting ? detector.current() : 0.0; }
     void prepareDetector (double hostRate, int hostControlBlock) noexcept { detector.prepare (hostRate, hostControlBlock); }
@@ -58,8 +59,15 @@ public:
     void prepare (double sampleRate, int maxBlock, int numChannels);
     void reset() noexcept;
 
-    /** In-place. numSamples must not exceed maxBlock given to prepare(). */
-    void process (double* const* io, int numChannels, int numSamples, const ParamSnapshot& params) noexcept;
+    /** In-place. numSamples must not exceed maxBlock given to prepare(). sidechain may be
+        null; with one sidechain channel it is used for both sides. */
+    void process (double* const* io, int numChannels, int numSamples, const ParamSnapshot& params,
+                  const double* const* sidechain = nullptr, int sidechainChannels = 0) noexcept;
+
+    /** Band audition: the output becomes the part of the input that the band works on.
+        -1 switches it off. Not a parameter: never saved, never automated. */
+    void setSoloBand (int band) noexcept { soloRequest.store (band, std::memory_order_relaxed); }
+    int soloBand() const noexcept { return soloRequest.load (std::memory_order_relaxed); }
 
     /** Latency of the mode currently running. Changes only when the phase mode changes. */
     int latencySamples() const noexcept { return latency.load (std::memory_order_relaxed); }
@@ -78,7 +86,9 @@ public:
 
 private:
     void updateTargets (const ParamSnapshot& params, bool mono) noexcept;
-    void processSegment (double* const* io, int numChannels, int offset, int n) noexcept;
+    void processSegment (double* const* io, int numChannels, int offset, int n,
+                         const double* const* sidechain, int sidechainChannels) noexcept;
+    void updateSolo (const ParamSnapshot& params) noexcept;
     void configure (int mode) noexcept;
     bool runBands (double* left, double* right, int n) noexcept;
 
@@ -112,6 +122,13 @@ private:
     double gainL = 1.0, gainR = 1.0, gainTargetL = 1.0, gainTargetR = 1.0;
     double bypassMix = 0.0, bypassTarget = 0.0;
     double deltaMix = 0.0, deltaTarget = 0.0;
+
+    // Solo (audition) filter on the delayed input.
+    std::atomic<int> soloRequest { -1 };
+    Placement soloPlace = Placement::Stereo;
+    double sb0 = 1.0, sb1 = 0.0, sb2 = 0.0, sa1 = 0.0, sa2 = 0.0;
+    double soloState[2][2] {};
+    double soloMix = 0.0, soloTarget = 0.0;
 
     std::array<std::atomic<float>, 2> peaks {};
     std::array<std::atomic<float>, kMaxBands> dynGains {};

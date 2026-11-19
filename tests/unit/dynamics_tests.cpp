@@ -188,3 +188,84 @@ TEST_CASE ("dynamics: gain scale also scales the range; shapes without dynamics 
     p.bands[0].shape = Shape::LowCut;
     CHECK (run (p, 0.0, 1000.0, 0.5).dynDb == 0.0);
 }
+
+TEST_CASE ("dynamics: external sidechain drives a band set to External", "[dynamics]")
+{
+    DynParams d;
+    d.on = true;
+    d.autoThreshold = false;
+    d.thresholdDb = -30.0;
+    d.ratio = 100.0;
+    d.kneeDb = 0.0;
+    d.rangeDb = -9.0;
+    auto p = bellWith (d);
+
+    // Quiet programme, loud 1 kHz key on the sidechain.
+    const auto runKeyed = [&] (bool external, int scChannels)
+    {
+        p.bands[0].dyn.external = external;
+        Engine e;
+        e.prepare (48000.0, 512, 2);
+        std::vector<double> l (512), r (512), k (512);
+        for (int block = 0; block < 60; ++block)
+        {
+            for (int i = 0; i < 512; ++i)
+            {
+                const double ph = 2.0 * std::numbers::pi * 1000.0 * (block * 512 + i) / 48000.0;
+                l[static_cast<size_t> (i)] = r[static_cast<size_t> (i)] = 0.001 * std::sin (ph);
+                k[static_cast<size_t> (i)] = 0.8 * std::sin (ph);
+            }
+            double* io[2] = { l.data(), r.data() };
+            const double* sc[2] = { k.data(), k.data() };
+            e.process (io, 2, 512, p, scChannels > 0 ? sc : nullptr, scChannels);
+        }
+        return static_cast<double> (e.dynamicGainDb (0));
+    };
+
+    CHECK_THAT (runKeyed (true, 2), WithinAbs (-9.0, 0.01));    // keyed from the sidechain
+    CHECK_THAT (runKeyed (true, 1), WithinAbs (-9.0, 0.01));    // mono sidechain works too
+    CHECK (runKeyed (false, 2) == 0.0);                          // Internal ignores it
+    CHECK (runKeyed (true, 0) == 0.0);                           // no sidechain: falls back to the input
+}
+
+TEST_CASE ("solo: the output becomes the band's part of the input", "[solo]")
+{
+    ParamSnapshot p;
+    p.bands[2] = { true, true, Shape::Bell, Slope::S12, Placement::Stereo, 1000.0, 9.0, 4.0 };
+    p.bands[3] = { true, true, Shape::LowCut, Slope::S24, Placement::Stereo, 200.0, 0.0, 0.7071 };
+
+    const auto gainOf = [&] (int solo, double freq)
+    {
+        Engine e;
+        e.prepare (48000.0, 512, 2);
+        e.setSoloBand (solo);
+        std::vector<double> l (512), r (512);
+        double in = 0.0, out = 0.0;
+        for (int block = 0; block < 60; ++block)
+        {
+            for (int i = 0; i < 512; ++i)
+                l[static_cast<size_t> (i)] = r[static_cast<size_t> (i)] = 0.25 * std::sin (2.0 * std::numbers::pi * freq * (block * 512 + i) / 48000.0);
+            const auto dry = l;
+            double* io[2] = { l.data(), r.data() };
+            e.process (io, 2, 512, p);
+            if (block >= 40)
+                for (int i = 0; i < 512; ++i)
+                {
+                    in += dry[static_cast<size_t> (i)] * dry[static_cast<size_t> (i)];
+                    out += l[static_cast<size_t> (i)] * l[static_cast<size_t> (i)];
+                }
+        }
+        return 10.0 * std::log10 (out / in);
+    };
+
+    // Soloing the bell: its centre passes at unity (not +9: you hear the input, band-passed),
+    // and a tone far away is strongly attenuated.
+    CHECK_THAT (gainOf (2, 1000.0), WithinAbs (0.0, 0.1));
+    CHECK (gainOf (2, 100.0) < -25.0);
+    // Soloing the low cut: you hear what it removes, the lows.
+    CHECK_THAT (gainOf (3, 50.0), WithinAbs (0.0, 0.3));
+    CHECK (gainOf (3, 4000.0) < -40.0);
+    // No solo, or a solo on an unused band: normal processing.
+    CHECK_THAT (gainOf (-1, 1000.0), WithinAbs (9.0, 0.1));
+    CHECK_THAT (gainOf (7, 1000.0), WithinAbs (9.0, 0.1));
+}

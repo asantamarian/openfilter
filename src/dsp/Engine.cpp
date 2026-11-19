@@ -278,6 +278,7 @@ void Engine::updateTargets (const ParamSnapshot& params, bool mono) noexcept
         gainTargetL = gainTargetR = g;
     bypassTarget = params.bypass ? 1.0 : 0.0;
     deltaTarget = params.delta ? 1.0 : 0.0;
+    updateSolo (params);
 
     if (fresh)   // first block after a reset: start settled
     {
@@ -289,7 +290,36 @@ void Engine::updateTargets (const ParamSnapshot& params, bool mono) noexcept
     }
 }
 
-void Engine::process (double* const* io, int numChannels, int numSamples, const ParamSnapshot& params) noexcept
+void Engine::updateSolo (const ParamSnapshot& params) noexcept
+{
+    const int request = soloRequest.load (std::memory_order_relaxed);
+    if (request < 0 || request >= kMaxBands || ! params.bands[static_cast<size_t> (request)].used)
+    {
+        soloTarget = 0.0;
+        return;
+    }
+
+    // The part of the spectrum the band works on: a band-pass for bells, notches and band
+    // passes; for shelves and cuts, the side of the corner they change.
+    const auto& b = params.bands[static_cast<size_t> (request)];
+    const double w = 2.0 * std::numbers::pi * std::clamp (b.freq, 10.0, 0.45 * fs) / fs;
+    const double cs = std::cos (w), sn = std::sin (w);
+    const bool low = b.shape == Shape::LowShelf || b.shape == Shape::LowCut;
+    const bool high = b.shape == Shape::HighShelf || b.shape == Shape::HighCut || b.shape == Shape::TiltShelf;
+    const double q = (low || high) ? 0.7071 : std::clamp (b.q, 0.5, 12.0);
+    const double alpha = sn / (2.0 * q), a0 = 1.0 + alpha;
+    double c0, c1, c2;
+    if (low)        { c0 = 0.5 * (1.0 - cs); c1 = 1.0 - cs; c2 = c0; }
+    else if (high)  { c0 = 0.5 * (1.0 + cs); c1 = -(1.0 + cs); c2 = c0; }
+    else            { c0 = alpha; c1 = 0.0; c2 = -alpha; }
+    sb0 = c0 / a0;  sb1 = c1 / a0;  sb2 = c2 / a0;
+    sa1 = -2.0 * cs / a0;  sa2 = (1.0 - alpha) / a0;
+    soloPlace = b.place;
+    soloTarget = 1.0;
+}
+
+void Engine::process (double* const* io, int numChannels, int numSamples, const ParamSnapshot& params,
+                      const double* const* sidechain, int sidechainChannels) noexcept
 {
     numChannels = std::min (numChannels, 2);
     if (numChannels <= 0)
@@ -302,7 +332,7 @@ void Engine::process (double* const* io, int numChannels, int numSamples, const 
             updateTargets (params, numChannels == 1);
 
         const int n = std::min (controlLen - controlPhase, numSamples - pos);
-        processSegment (io, numChannels, pos, n);
+        processSegment (io, numChannels, pos, n, sidechain, sidechainChannels);
         controlPhase = (controlPhase + n) % controlLen;
         pos += n;
     }
@@ -359,7 +389,8 @@ bool Engine::runBands (double* left, double* right, int n) noexcept
     return any;
 }
 
-void Engine::processSegment (double* const* io, int numChannels, int offset, int n) noexcept
+void Engine::processSegment (double* const* io, int numChannels, int offset, int n,
+                             const double* const* sidechain, int sidechainChannels) noexcept
 {
     double* left = io[0] + offset;
     double* right = numChannels > 1 ? io[1] + offset : nullptr;
@@ -368,9 +399,18 @@ void Engine::processSegment (double* const* io, int numChannels, int offset, int
     const int lat = latency.load (std::memory_order_relaxed);
 
     // Dynamic bands listen to the input, before any band has touched it.
+    // A band set to External listens to the sidechain input instead, when there is one.
+    const double* scLeft = sidechain != nullptr && sidechainChannels > 0 ? sidechain[0] + offset : nullptr;
+    const double* scRight = scLeft == nullptr || right == nullptr ? nullptr
+                          : sidechainChannels > 1 ? sidechain[1] + offset : scLeft;
     for (auto& b : bands)
         if (b.wantsDetection())
-            b.detect (left, right, n);
+        {
+            if (b.wantsExternal() && scLeft != nullptr)
+                b.detect (scLeft, scRight, n);
+            else
+                b.detect (left, right, n);
+        }
 
     // Dry signal, delayed by the latency: for bypass, delta, and the idle path.
     if (lat > 0)
@@ -487,6 +527,40 @@ void Engine::processSegment (double* const* io, int numChannels, int offset, int
             if (right != nullptr)
                 right[i] *= gainR;
         }
+    }
+
+    // Solo: replace the output with the auditioned part of the (delayed) input.
+    if (soloMix != 0.0 || soloTarget != 0.0)
+    {
+        const double step = 1.0 / rampLen;
+        const auto tick = [this] (int ch, double x)
+        {
+            auto& z = soloState[ch];
+            const double y = sb0 * x + z[0];
+            z[0] = sb1 * x - sa1 * y + z[1];
+            z[1] = sb2 * x - sa2 * y;
+            return y;
+        };
+        for (int i = 0; i < n; ++i)
+        {
+            soloMix = soloTarget > soloMix ? std::min (soloTarget, soloMix + step) : std::max (soloTarget, soloMix - step);
+            double a = dryL[i], b = right != nullptr ? dryR[i] : dryL[i];
+            if (right != nullptr)
+            {
+                // Audition what the band's channel hears.
+                if (soloPlace == Placement::Mid)        a = b = 0.5 * (dryL[i] + dryR[i]);
+                else if (soloPlace == Placement::Side)  { a = 0.5 * (dryL[i] - dryR[i]); b = -a; }
+                else if (soloPlace == Placement::Left)  b = 0.0;
+                else if (soloPlace == Placement::Right) a = 0.0;
+            }
+            const double fa = tick (0, a), fb = tick (1, b);
+            left[i] += soloMix * (fa - left[i]);
+            if (right != nullptr)
+                right[i] += soloMix * (fb - right[i]);
+        }
+        if (soloMix == 0.0 && soloTarget == 0.0)
+            for (auto& z : soloState)
+                z[0] = z[1] = 0.0;
     }
 
     // Bypass crossfade.

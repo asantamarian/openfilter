@@ -571,8 +571,32 @@ void ResponseDisplay::mouseWheelMove (const juce::MouseEvent& e, const juce::Mou
     refresh();
 }
 
+bool ResponseDisplay::keyStateChanged (bool)
+{
+    // Hold S to audition the selected band; release to return.
+    const bool down = juce::KeyPress::isKeyCurrentlyDown ('s') && selected >= 0;
+    if (down != soloHeld)
+    {
+        soloHeld = down;
+        processor.setSoloBand (down ? selected : -1);
+        return true;
+    }
+    return false;
+}
+
+void ResponseDisplay::focusLost (FocusChangeType)
+{
+    if (soloHeld)
+    {
+        soloHeld = false;
+        processor.setSoloBand (-1);
+    }
+}
+
 bool ResponseDisplay::keyPressed (const juce::KeyPress& key)
 {
+    if (key.getKeyCode() == 's' || key.getKeyCode() == 'S')
+        return true;   // handled by keyStateChanged; do not pass it to the host
     if (selected < 0)
         return false;
     const auto& b = bands[static_cast<size_t> (selected)];
