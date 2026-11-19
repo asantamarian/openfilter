@@ -96,8 +96,8 @@ if(OF_BUILD_PLUGIN)
     target_link_libraries(of_host_test PRIVATE juce::juce_audio_utils juce::juce_recommended_config_flags)
     add_dependencies(of_host_test OpenFilterEQ_VST3 OpenFilterEQ_LV2)
     add_test(NAME of_host_test COMMAND of_host_test
-      "$<TARGET_PROPERTY:OpenFilterEQ_VST3,LIBRARY_OUTPUT_DIRECTORY>/OpenFilter EQ.vst3"
-      "$<TARGET_PROPERTY:OpenFilterEQ_LV2,LIBRARY_OUTPUT_DIRECTORY>/OpenFilter EQ.lv2")
+      "$<GENEX_EVAL:$<TARGET_PROPERTY:OpenFilterEQ_VST3,JUCE_PLUGIN_ARTEFACT_FILE>>"
+      "$<GENEX_EVAL:$<TARGET_PROPERTY:OpenFilterEQ_LV2,JUCE_PLUGIN_ARTEFACT_FILE>>")
     add_test(NAME of_snapshot COMMAND of_snapshot "${CMAKE_BINARY_DIR}/editor.png")
   endif()
 endif()
