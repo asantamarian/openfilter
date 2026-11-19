@@ -148,6 +148,47 @@ void testPlugin (juce::AudioPluginFormatManager& formats, const juce::String& pa
         check (std::abs (gainDb - 12.0) < 0.1, "bell gain at its centre frequency");
     }
 
+    // 2b. Natural phase mode: the host must be told the new latency, and the bell must still
+    //     measure +12 dB once that latency is accounted for.
+    if (auto* phase = findParam (*plugin, "Phase Mode"))
+    {
+        phase->setValueNotifyingHost (phase->getValueForText ("Natural"));
+        juce::AudioBuffer<float> buffer (channels, 512);
+        double in = 0.0, out = 0.0;
+        for (int block = 0; block < 100; ++block)
+        {
+            buffer.clear();
+            for (int i = 0; i < 512; ++i)
+            {
+                const float s = 0.1f * std::sin (juce::MathConstants<float>::twoPi * 1000.0f * static_cast<float> (block * 512 + i) / 48000.0f);
+                buffer.setSample (0, i, s);
+                buffer.setSample (1, i, s);
+            }
+            const double before = buffer.getRMSLevel (0, 0, 512);
+            plugin->processBlock (buffer, midi);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (1);
+            if (block >= 50)
+            {
+                in += before;
+                out += buffer.getRMSLevel (0, 0, 512);
+            }
+        }
+        std::printf ("    Natural mode: host sees %d samples of latency, bell measures %+.2f dB\n",
+                     plugin->getLatencySamples(), juce::Decibels::gainToDecibels (out / in));
+        check (plugin->getLatencySamples() == 76, "Natural mode at 48 kHz reports 76 samples of latency");
+        check (std::abs (juce::Decibels::gainToDecibels (out / in) - 12.0) < 0.1, "bell gain in Natural mode");
+        phase->setValueNotifyingHost (0.0f);
+        for (int block = 0; block < 6; ++block)   // LV2 reports latency only while running
+        {
+            buffer.clear();
+            plugin->processBlock (buffer, midi);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
+        }
+        check (plugin->getLatencySamples() == 0, "back to zero latency");
+    }
+    else
+        check (false, "parameter not found: Phase Mode");
+
     // 3. Random block sizes, sample rates and parameter storms: never NaN or Inf.
     {
         bool allFinite = true;

@@ -59,6 +59,7 @@ struct BandParams
 struct ParamSnapshot
 {
     std::array<BandParams, kMaxBands> bands {};   // gainDb here is the raw parameter value
+    int phaseMode = 0;       // 0 zero latency, 1 natural (linear and mixed arrive later)
     double gainScale = 1.0;
     double outGainDb = 0.0;
     double pan = 0.0;        // -1..1

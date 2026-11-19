@@ -47,6 +47,15 @@ OpenFilterEditor::OpenFilterEditor (OpenFilterProcessor& p)
     deltaButton.setClickingTogglesState (true);
     undoButton.onClick = [this] { processor.undo.undo(); };
     redoButton.onClick = [this] { processor.undo.redo(); };
+    // Linear and Mixed are in the parameter already but not built yet.
+    phaseBox.addItemList ({ "Zero latency", "Natural", "Linear (not yet)", "Mixed (not yet)" }, 1);
+    phaseBox.setItemEnabled (3, false);
+    phaseBox.setItemEnabled (4, false);
+    phaseBox.setTitle ("Phase mode");
+    phaseBox.setTooltip ("Zero latency: no delay, less exact in the top octave. Natural: follows the ideal curve up to 20 kHz, with a short delay and more CPU.");
+    phaseAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (p.apvts, "phase_mode", phaseBox);
+    addAndMakeVisible (phaseBox);
+
     presetButton.setTitle ("Preset");
     presetButton.onClick = [this] { showPresetMenu(); };
     for (auto* b : { &presetButton, &undoButton, &redoButton, &bypassButton, &deltaButton })
@@ -84,12 +93,16 @@ void OpenFilterEditor::resized()
     bypassButton.setBounds (right.removeFromRight (72));
     right.removeFromRight (8);
     deltaButton.setBounds (right.removeFromRight (64));
+    right.removeFromRight (16);
+    phaseBox.setBounds (right.removeFromRight (132));
+    right.removeFromRight (8);
+    latencyArea = right.removeFromRight (84);
     auto left = topBar.reduced (16, 11).withTrimmedLeft (170);
     undoButton.setBounds (left.removeFromLeft (60));
     left.removeFromLeft (6);
     redoButton.setBounds (left.removeFromLeft (60));
     left.removeFromLeft (16);
-    presetButton.setBounds (left.removeFromLeft (juce::jmin (260, juce::jmax (120, right.getRight() - left.getX() - 24))));
+    presetButton.setBounds (left.removeFromLeft (juce::jlimit (100, 260, right.getRight() - left.getX() - 16)));
 
     auto col = outputColumn.reduced (0, 12);
     col.removeFromTop (36);
@@ -122,6 +135,11 @@ void OpenFilterEditor::paint (juce::Graphics& g)
     g.setColour (theme::textMuted);
     g.setFont (theme::ui (14.0f));
     g.drawText ("EQ", 128, 0, 30, kTopBarHeight, juce::Justification::centredLeft, false);
+
+    // Latency of the current phase mode.
+    g.setColour (theme::textMuted);
+    g.setFont (theme::mono (11.0f));
+    g.drawText (juce::String (processor.getLatencySamples()) + " smp", latencyArea, juce::Justification::centredRight, false);
 
     // Output column.
     g.setColour (theme::panel);
@@ -215,6 +233,12 @@ void OpenFilterEditor::showPresetMenu()
 
 void OpenFilterEditor::timerCallback()
 {
+    if (processor.getLatencySamples() != shownLatency)
+    {
+        shownLatency = processor.getLatencySamples();
+        repaint (latencyArea);
+    }
+
     const auto presetText = processor.presetName.isEmpty() ? juce::String ("Presets") : processor.presetName;
     if (presetButton.getButtonText() != presetText)
         presetButton.setButtonText (presetText);

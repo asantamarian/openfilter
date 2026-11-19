@@ -19,12 +19,14 @@ Milestone M1 (static EQ, zero latency) is built and M2 (full UI) is under way. B
 | Plugin (`src/plugin`): 781 parameters, processor, session state | Built; VST3, LV2 and Standalone on Linux |
 | Editor (`src/ui`): response display with draggable bands, band dock, output meter | Built, first version |
 | Spectrum analyzer (input and output), JSON presets, typed values with note names | Built (first part of M2) |
-| Rest of M2 (band table, A/B/C/D, UI scaling, history), dynamics, linear phase, CLAP, M3 to M7 | Not yet |
+| Natural phase mode: filters at 4x, accurate to 20 kHz, 76 samples of latency at 44.1/48 kHz | Built (brought forward from M4) |
+| Rest of M2 (band table, A/B/C/D, UI scaling, history), dynamics, linear and mixed phase, CLAP, M3 to M7 | Not yet |
 
 Known gaps:
 
-- Zero-latency filter accuracy near Nyquist and for high-order shapes is below the
-  spec target. Figures and plan: `docs/spec/03-dsp.md`, section 3 and item R-6.
+- In Zero Latency mode the filters drift from the drawn curve in the top octave
+  (about 1 dB around 9 kHz and 2 dB around 15 kHz at 44.1/48 kHz). Natural mode fixes
+  this at the cost of latency and CPU. Figures: `docs/spec/03-dsp.md`, sections 3 and 5.
 - Tested on Linux only. Windows and macOS builds have not been tried.
 - Validated with our own host test, not yet with pluginval or in a DAW.
 - The LV2 editor has not been exercised (the headless host test cannot embed it).

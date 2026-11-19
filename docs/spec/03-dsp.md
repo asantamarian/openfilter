@@ -187,11 +187,34 @@ y  = m0*x + m1*v1 + m2*v2
 
 ## 5. Natural mode
 
-Identical band design, run at `2 fs` when `fs < 88.2 kHz` so that both magnitude
-and phase follow the analog prototype through 20 kHz. Resampling: linear-phase
-half-band FIR pair (stop band 100 dB, transition from 20 kHz to `fs - 20 kHz`).
-The measured round-trip delay is reported as latency. At `fs >= 88.2 kHz` Natural
-is the same as Zero Latency.
+Identical band design, run at a higher internal rate so the response follows the
+analog prototype through 20 kHz:
+
+| Host sample rate | Internal rate | Latency (samples) |
+|---|---|---|
+| 44.1, 48 kHz | 4x | 76 |
+| 88.2, 96 kHz | 2x | 13 |
+| 176.4 kHz and above | 1x (same as Zero Latency) | 0 |
+
+2x is not enough at 44.1/48 kHz. Measured worst error for ordinary settings
+(12 dB/oct, Q 0.7 to 4, ±9 dB, band anywhere from 20 Hz to 20 kHz, base rate
+44.1 kHz): shelves 2.3 dB at 1x, 0.96 dB at 2x, 0.23 dB at 4x; bells 1.2, 0.26,
+0.07 dB; cuts 2.0, 0.10, 0.02 dB.
+
+Resampling: linear-phase half-band FIRs (Kaiser, about 100 dB stop band), polyphase.
+The first stage has 139 taps (flat to 20 kHz at 44.1 kHz); later stages, and the
+single stage at 88.2/96 kHz, have 27. A round trip through a stage delays by its
+half-length in input samples (69 or 13). In the 4x chain one extra sample at 2x
+makes the total a whole number: 69 + 7 = 76.
+
+When no band is active the output is the input delayed by the latency, bit for bit;
+the resamplers keep running so a band can come in without a gap. A phase-mode
+switch reconfigures the engine at a control-block boundary and fades the output in
+over 10 ms. CPU cost of the bands is 4x (or 2x) that of Zero Latency.
+
+Verified by `tests/unit/natural_tests.cpp`: in the top octave at 44.1 kHz the error
+against the prototype is 0.09 dB in Natural against 1.20 dB in Zero Latency for the
+same settings.
 
 ## 6. Linear and mixed phase
 
@@ -352,5 +375,5 @@ Both are unity gain for small signals. Voicing is research item R-4.
 | R-3 | Continuous slopes | Keep discrete slopes |
 | R-4 | Character voicing | Ship Clean only in v1.0 |
 | R-5 | Error of the parallel dynamic FIR form with overlapping bands | Serial form with added latency |
-| R-6 | Zero-latency accuracy near Nyquist and for high-order shapes (§3 table). Candidates: fit the denominator too (rational least squares in the same magnitude basis), Orfanidis-style closed forms for bells, or a per-band 2x path | Document the limit; Natural mode (§5) is the accurate option |
+| R-6 | Zero-latency accuracy near Nyquist and for high-order shapes (§3 table). Natural mode (§5) is the accurate option and is built. Remaining candidates for the zero-latency path: fit the denominator too (rational least squares in the same magnitude basis), or Orfanidis-style closed forms for bells | Leave Zero Latency as it is and document the limit |
 | R-7 | LV2: JUCE's client wrapper reads every declared input port, so an unconnected optional sidechain port is a null dereference (seen in the host test). Options: patch the wrapper to treat null ports as silence, or ship LV2 with the sidechain always required | Ship the LV2 build without an external sidechain |

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "kernel/ChannelFilter.h"
+#include "util/Halfband.h"
 
 #include <atomic>
 #include <vector>
@@ -50,7 +51,13 @@ public:
     /** In-place. numSamples must not exceed maxBlock given to prepare(). */
     void process (double* const* io, int numChannels, int numSamples, const ParamSnapshot& params) noexcept;
 
-    int latencySamples() const noexcept { return 0; }
+    /** Latency of the mode currently running. Changes only when the phase mode changes. */
+    int latencySamples() const noexcept { return latency.load (std::memory_order_relaxed); }
+
+    /** Latency a mode will have at a sample rate: lets the plugin tell the host from the
+        message thread. Phase modes: 0 zero latency, 1 natural. */
+    static int latencyFor (int phaseMode, double sampleRate) noexcept;
+    static int oversamplingFor (int phaseMode, double sampleRate) noexcept;
     int controlBlockSize() const noexcept { return controlLen; }
 
     /** Peak since the last call (linear). Called by the UI. */
@@ -59,6 +66,26 @@ public:
 private:
     void updateTargets (const ParamSnapshot& params, bool mono) noexcept;
     void processSegment (double* const* io, int numChannels, int offset, int n) noexcept;
+    void configure (int mode) noexcept;
+    bool runBands (double* left, double* right, int n) noexcept;
+
+    static constexpr int kSteepHalf = 69, kWideHalf = 13;
+    static constexpr int kDelayMask = 255;
+
+    // Per channel: the two half-band stages, their work buffers and the dry delay line.
+    struct Stages
+    {
+        Halfband first, second;
+        std::array<double, 256> mid {};
+        std::array<double, 512> work {};
+        std::array<double, kDelayMask + 1> delay {};
+        double pad = 0.0;
+    };
+    std::array<Stages, 2> stages {};
+    int delayPos = 0;
+    int phaseMode = 0, factor = 1;
+    std::atomic<int> latency { 0 };
+    double modeFade = 1.0;
 
     std::array<BandProcessor, kMaxBands> bands {};
     std::vector<double> dry[2];

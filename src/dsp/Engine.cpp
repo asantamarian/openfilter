@@ -155,6 +155,23 @@ void BandProcessor::processLaneB (double* mid, double* side, int n) noexcept
 }
 
 //==============================================================================
+int Engine::oversamplingFor (int phaseMode, double sampleRate) noexcept
+{
+    if (phaseMode != 1)   // only Natural oversamples
+        return 1;
+    return sampleRate < 70000.0 ? 4 : sampleRate < 140000.0 ? 2 : 1;
+}
+
+int Engine::latencyFor (int phaseMode, double sampleRate) noexcept
+{
+    switch (oversamplingFor (phaseMode, sampleRate))
+    {
+        case 4:  return kSteepHalf + (kWideHalf + 1) / 2;   // 69 + 7
+        case 2:  return kWideHalf;                          // 13
+        default: return 0;
+    }
+}
+
 void Engine::prepare (double sampleRate, int maxBlock, int)
 {
     fs = sampleRate;
@@ -162,17 +179,42 @@ void Engine::prepare (double sampleRate, int maxBlock, int)
     rampLen = std::max (1, static_cast<int> (0.010 * sampleRate));
     for (auto& d : dry)
         d.assign (static_cast<size_t> (std::max (1, maxBlock)), 0.0);
-    for (auto& b : bands)
-        b.prepare (sampleRate, controlLen);
+    configure (phaseMode);
     reset();
+}
+
+void Engine::configure (int mode) noexcept
+{
+    phaseMode = mode;
+    factor = oversamplingFor (mode, fs);
+    latency.store (latencyFor (mode, fs), std::memory_order_relaxed);
+    for (auto& ch : stages)
+    {
+        ch.first.design (factor == 4 ? kSteepHalf : kWideHalf);
+        ch.second.design (kWideHalf);
+        ch.pad = 0.0;
+        ch.delay.fill (0.0);
+    }
+    delayPos = 0;
+    for (auto& b : bands)
+        b.prepare (fs * factor, controlLen * factor);   // also resets the band
 }
 
 void Engine::reset() noexcept
 {
     for (auto& b : bands)
         b.reset();
+    for (auto& ch : stages)
+    {
+        ch.first.reset();
+        ch.second.reset();
+        ch.pad = 0.0;
+        ch.delay.fill (0.0);
+    }
+    delayPos = 0;
     controlPhase = 0;
     fresh = true;
+    modeFade = 1.0;
     gainL = gainTargetL;
     gainR = gainTargetR;
     bypassMix = bypassTarget;
@@ -183,6 +225,15 @@ void Engine::reset() noexcept
 
 void Engine::updateTargets (const ParamSnapshot& params, bool mono) noexcept
 {
+    if (params.phaseMode != phaseMode)
+    {
+        // A different phase mode changes rate and latency. It is not automatable, so a
+        // short fade-in after the switch is enough.
+        const bool wasFresh = fresh;
+        configure (params.phaseMode);
+        modeFade = wasFresh ? 1.0 : 0.0;
+    }
+
     for (int i = 0; i < kMaxBands; ++i)
     {
         BandParams p = params.bands[static_cast<size_t> (i)];
@@ -238,23 +289,17 @@ void Engine::process (double* const* io, int numChannels, int numSamples, const 
     }
 }
 
-void Engine::processSegment (double* const* io, int numChannels, int offset, int n) noexcept
+bool Engine::runBands (double* left, double* right, int n) noexcept
 {
-    double* left = io[0] + offset;
-    double* right = numChannels > 1 ? io[1] + offset : nullptr;
-
-    const bool needDry = bypassMix != 0.0 || bypassTarget != 0.0 || deltaMix != 0.0 || deltaTarget != 0.0;
-    if (needDry)
-    {
-        std::copy_n (left, n, dry[0].data() + offset);
-        if (right != nullptr)
-            std::copy_n (right, n, dry[1].data() + offset);
-    }
+    bool any = false;
 
     // Lane A: stereo, left, right.
     for (auto& b : bands)
         if (b.laneAActive())
+        {
             b.processLaneA (left, right, n);
+            any = true;
+        }
 
     // Lane B: mid, side. Encoded only when something needs it, to keep the idle path exact.
     if (right != nullptr)
@@ -265,6 +310,7 @@ void Engine::processSegment (double* const* io, int numChannels, int offset, int
 
         if (anyB)
         {
+            any = true;
             for (int i = 0; i < n; ++i)
             {
                 const double m = 0.5 * (left[i] + right[i]), s = 0.5 * (left[i] - right[i]);
@@ -282,6 +328,104 @@ void Engine::processSegment (double* const* io, int numChannels, int offset, int
             }
         }
     }
+    return any;
+}
+
+void Engine::processSegment (double* const* io, int numChannels, int offset, int n) noexcept
+{
+    double* left = io[0] + offset;
+    double* right = numChannels > 1 ? io[1] + offset : nullptr;
+    double* dryL = dry[0].data() + offset;
+    double* dryR = dry[1].data() + offset;
+    const int lat = latency.load (std::memory_order_relaxed);
+
+    // Dry signal, delayed by the latency: for bypass, delta, and the idle path.
+    if (lat > 0)
+    {
+        for (int i = 0; i < n; ++i)
+        {
+            const int w = (delayPos + i) & kDelayMask, r = (delayPos + i - lat) & kDelayMask;
+            stages[0].delay[static_cast<size_t> (w)] = left[i];
+            dryL[i] = stages[0].delay[static_cast<size_t> (r)];
+            if (right != nullptr)
+            {
+                stages[1].delay[static_cast<size_t> (w)] = right[i];
+                dryR[i] = stages[1].delay[static_cast<size_t> (r)];
+            }
+        }
+        delayPos = (delayPos + n) & kDelayMask;
+    }
+    else
+    {
+        std::copy_n (left, n, dryL);
+        if (right != nullptr)
+            std::copy_n (right, n, dryR);
+    }
+
+    if (factor == 1)
+    {
+        runBands (left, right, n);
+    }
+    else
+    {
+        // Natural: run the bands at 2x or 4x so their response follows the analog prototype
+        // through the top octave (docs/spec/03-dsp.md section 5).
+        double* up[2] = { stages[0].work.data(), stages[1].work.data() };
+        const int channels = right != nullptr ? 2 : 1;
+        double* in[2] = { left, right };
+        const int m = n * factor;
+
+        for (int ch = 0; ch < channels; ++ch)
+        {
+            auto& st = stages[static_cast<size_t> (ch)];
+            if (factor == 4)
+            {
+                st.first.up (in[ch], n, st.mid.data());
+                st.second.up (st.mid.data(), 2 * n, up[ch]);
+            }
+            else
+                st.first.up (in[ch], n, up[ch]);
+        }
+
+        const bool any = runBands (up[0], channels > 1 ? up[1] : nullptr, m);
+
+        for (int ch = 0; ch < channels; ++ch)
+        {
+            auto& st = stages[static_cast<size_t> (ch)];
+            if (factor == 4)
+            {
+                st.second.down (up[ch], 2 * n, st.mid.data());
+                // One extra sample at 2x makes the round trip a whole number of samples.
+                for (int i = 0; i < 2 * n; ++i)
+                    std::swap (st.pad, st.mid[static_cast<size_t> (i)]);
+                st.first.down (st.mid.data(), n, in[ch]);
+            }
+            else
+                st.first.down (up[ch], n, in[ch]);
+        }
+
+        // With no band active the resampled signal is replaced by the delayed input, which
+        // is exact; the resamplers keep running so a band can come in without a gap.
+        if (! any)
+        {
+            std::copy_n (dryL, n, left);
+            if (right != nullptr)
+                std::copy_n (dryR, n, right);
+        }
+    }
+
+    // Fade in after a phase-mode switch.
+    if (modeFade < 1.0)
+    {
+        const double step = 1.0 / rampLen;
+        for (int i = 0; i < n; ++i)
+        {
+            modeFade = std::min (1.0, modeFade + step);
+            left[i] *= modeFade;
+            if (right != nullptr)
+                right[i] *= modeFade;
+        }
+    }
 
     // Delta: what the EQ changed, before output gain.
     if (deltaMix != 0.0 || deltaTarget != 0.0)
@@ -290,9 +434,9 @@ void Engine::processSegment (double* const* io, int numChannels, int offset, int
         for (int i = 0; i < n; ++i)
         {
             deltaMix = deltaTarget > deltaMix ? std::min (deltaTarget, deltaMix + step) : std::max (deltaTarget, deltaMix - step);
-            left[i] -= deltaMix * dry[0][static_cast<size_t> (offset + i)];
+            left[i] -= deltaMix * dryL[i];
             if (right != nullptr)
-                right[i] -= deltaMix * dry[1][static_cast<size_t> (offset + i)];
+                right[i] -= deltaMix * dryR[i];
         }
     }
 
@@ -319,9 +463,9 @@ void Engine::processSegment (double* const* io, int numChannels, int offset, int
         for (int i = 0; i < n; ++i)
         {
             bypassMix = bypassTarget > bypassMix ? std::min (bypassTarget, bypassMix + step) : std::max (bypassTarget, bypassMix - step);
-            left[i] += bypassMix * (dry[0][static_cast<size_t> (offset + i)] - left[i]);
+            left[i] += bypassMix * (dryL[i] - left[i]);
             if (right != nullptr)
-                right[i] += bypassMix * (dry[1][static_cast<size_t> (offset + i)] - right[i]);
+                right[i] += bypassMix * (dryR[i] - right[i]);
         }
     }
 }

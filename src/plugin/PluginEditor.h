@@ -30,6 +30,10 @@ private:
     BandDock dock;
     Dial outputDial { "Out" };
     juce::TextButton presetButton;
+    juce::ComboBox phaseBox;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> phaseAttachment;
+    juce::Rectangle<int> latencyArea;
+    int shownLatency = -1;
     std::unique_ptr<juce::FileChooser> chooser;
     juce::TextButton undoButton { "Undo" }, redoButton { "Redo" }, bypassButton { "Bypass" }, deltaButton { "Delta" };
     juce::AudioProcessorValueTreeState::ButtonAttachment bypassAttachment, deltaAttachment;

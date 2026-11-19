@@ -23,7 +23,22 @@ OpenFilterProcessor::OpenFilterProcessor()
     invertPtr = raw ("out_invert");
     bypassPtr = raw ("bypass");
     deltaPtr = raw ("delta");
+    phaseModePtr = raw ("phase_mode");
     bypassParam = apvts.getParameter ("bypass");
+    apvts.addParameterListener ("phase_mode", this);
+}
+
+OpenFilterProcessor::~OpenFilterProcessor()
+{
+    apvts.removeParameterListener ("phase_mode", this);
+    cancelPendingUpdate();
+}
+
+void OpenFilterProcessor::updateLatency()
+{
+    const int mode = juce::roundToInt (phaseModePtr->load());
+    const double rate = getSampleRate() > 0.0 ? getSampleRate() : 48000.0;
+    setLatencySamples (Engine::latencyFor (mode, rate));
 }
 
 //==============================================================================
@@ -34,7 +49,7 @@ void OpenFilterProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
         w.assign (static_cast<size_t> (maxBlock), 0.0);
     tap.assign (static_cast<size_t> (maxBlock), 0.0f);
     engine.prepare (sampleRate, maxBlock, getMainBusNumOutputChannels());
-    setLatencySamples (engine.latencySamples());
+    updateLatency();
 }
 
 bool OpenFilterProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -63,6 +78,7 @@ void OpenFilterProcessor::readSnapshot (ParamSnapshot& s) const noexcept
         out.gainDb = f (p.gain);
         out.q = f (p.q);
     }
+    s.phaseMode = juce::roundToInt (f (phaseModePtr));
     s.gainScale = f (gainScalePtr) * 0.01;
     s.outGainDb = f (outGainPtr);
     s.pan = f (outPanPtr) * 0.01;
@@ -160,6 +176,7 @@ void OpenFilterProcessor::setStateInformation (const void* data, int size)
     {
         apvts.replaceState (state.createCopy());
         undo.clearUndoHistory();
+        updateLatency();
     }
 
     const auto ui = root.getChildWithName ("Ui");

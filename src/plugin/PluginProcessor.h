@@ -8,10 +8,13 @@
 
 namespace of
 {
-class OpenFilterProcessor final : public juce::AudioProcessor
+class OpenFilterProcessor final : public juce::AudioProcessor,
+                                  private juce::AudioProcessorValueTreeState::Listener,
+                                  private juce::AsyncUpdater
 {
 public:
     OpenFilterProcessor();
+    ~OpenFilterProcessor() override;
 
     //==============================================================================
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
@@ -67,12 +70,16 @@ private:
     struct BandPtrs { std::atomic<float>* used, *on, *shape, *slope, *freq, *gain, *q, *place; };
 
     void readSnapshot (ParamSnapshot&) const noexcept;
+    // The phase mode changes latency; the host is told from the message thread.
+    void parameterChanged (const juce::String&, float) override { triggerAsyncUpdate(); }
+    void handleAsyncUpdate() override { updateLatency(); }
+    void updateLatency();
     template <typename Sample> void process (juce::AudioBuffer<Sample>&);
 
     Engine engine;
     std::array<BandPtrs, kMaxBands> bandPtrs {};
     std::atomic<float>* gainScalePtr = nullptr, *outGainPtr = nullptr, *outPanPtr = nullptr,
-                      * invertPtr = nullptr, *bypassPtr = nullptr, *deltaPtr = nullptr;
+                      * invertPtr = nullptr, *bypassPtr = nullptr, *deltaPtr = nullptr, *phaseModePtr = nullptr;
     juce::AudioProcessorParameter* bypassParam = nullptr;
     std::vector<double> work[2];
     std::vector<float> tap;
