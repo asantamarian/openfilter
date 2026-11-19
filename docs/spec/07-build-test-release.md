@@ -147,19 +147,60 @@ cmake --preset dev && cmake --build --preset dev
 
 ## 5. Benchmarks (`tests/bench`)
 
-Targets on the CI reference machine, 48 kHz, 512-sample blocks, stereo, as a share
-of one core. They are budgets to validate in M1 and then lock; a regression of
-more than 15 % fails CI.
+`of_bench` measures the engine alone (no plugin wrapper, no editor) at 48 kHz,
+512-sample blocks, stereo, as a share of one core: the best of three runs of four
+seconds of audio each. `of_bench --check` fails if a scenario is over its budget.
+It is not part of `ctest`, because timings depend on the machine.
 
-| Scenario | Budget |
-|---|---|
-| Idle (no active bands) | under 0.05 % |
-| 8 static bells, Zero Latency | under 0.4 % |
-| 24 static bands, mixed shapes, Zero Latency | under 1.5 % |
-| 8 dynamic bands | under 1.5 % |
-| 24 bands, Linear, Medium | under 3 % |
-| 4 spectral bands | under 4 % |
-| Editor open, analyzer on, 1280 x 800, 60 fps | under 5 % of one core on the message thread |
+Measured on the development machine (a 16-thread desktop CPU, GCC 16, `-O3`), with
+the budget each scenario is held to:
+
+| Scenario | Measured | Budget |
+|---|---|---|
+| Idle (no active bands) | 0.056 % | 0.10 % |
+| 8 static bells, zero latency | 0.35 % | 0.4 % |
+| 8 bells, all automated every block | 0.59 % | 2 % |
+| 24 static bands, mixed shapes and placements | 0.89 % | 1.5 % |
+| The same 24 bands, Natural (4x) | 4.33 % | 6 % |
+| The same 24 bands, Linear, Medium | 0.97 % | 3 % |
+| The same 24 bands, Linear, Max | 3.63 % | 12 % |
+| 8 dynamic bands | 0.67 % | 1.5 % |
+| 4 spectral bands | 2.25 % | 4 % |
+| Character: Tube (4x), no bands | 1.59 % | 2 % |
+| Loudness auto gain, 8 bells | 0.42 % | 1 % |
+
+Notes:
+
+- Idle is not literally free: every control block still checks 32 band slots and
+  copies the dry signal. The first budget of 0.05 % was a guess; 0.1 % is the
+  figure held from here on.
+- Linear phase costs about the same for one band as for twenty-four: the kernel
+  is one convolution whatever it contains. Its cost follows the kernel length.
+- Natural mode costs a little under five times Zero Latency, for 4x the samples
+  plus resampling.
+- Not measured yet: the editor's drawing cost, the plugin wrappers, and other
+  sample rates and block sizes.
+
+### Sanitizers
+
+The unit tests build and run clean under AddressSanitizer plus
+UndefinedBehaviorSanitizer (all 49 test cases) and under ThreadSanitizer (the 22
+test cases that use the worker thread, mode switches and edits while running):
+
+```
+cmake -S . -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DOF_BUILD_PLUGIN=OFF \
+  -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined" \
+  -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+cmake --build build-asan --target of_tests && ./build-asan/of_tests
+
+cmake -S . -B build-tsan -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DOF_BUILD_PLUGIN=OFF \
+  -DCMAKE_CXX_FLAGS="-fsanitize=thread -fno-omit-frame-pointer" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
+cmake --build build-tsan --target of_tests && ./build-tsan/of_tests "[linear],[natural],[spectral],[engine]"
+```
+
+This covers the DSP core only. The plugin and editor code (JUCE side) has not been
+run under a sanitizer, and the real-time sanitizer (allocation and lock detection
+on the audio thread) is not set up.
 
 ## 6. CI
 

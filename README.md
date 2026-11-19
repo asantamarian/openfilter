@@ -42,7 +42,10 @@ Known gaps:
   (about 1 dB around 9 kHz and 2 dB around 15 kHz at 44.1/48 kHz). Natural mode fixes
   this at the cost of latency and CPU. Figures: `docs/spec/03-dsp.md`, sections 3 and 5.
 - Tested on Linux only. Windows and macOS builds have not been tried.
-- Validated with our own host test, not yet with pluginval or in a DAW.
+- Validated with our own host test and by hand in Reaper, not yet with pluginval.
+- The DSP core is clean under address, undefined-behaviour and thread sanitizers; the
+  plugin and editor code has not been run under one. CPU figures are in
+  `docs/spec/07-build-test-release.md`, section 5.
 - The LV2 editor has not been exercised (the headless host test cannot embed it).
 - In LV2 the sidechain input is a required port (a workaround for a crash in JUCE's
   LV2 wrapper), so the plugin shows four inputs there.

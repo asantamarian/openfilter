@@ -129,4 +129,9 @@ if(OF_BUILD_TESTS)
     tests/unit/fit_tests.cpp)
   target_link_libraries(of_tests PRIVATE of_dsp Catch2::Catch2WithMain)
   add_test(NAME of_tests COMMAND of_tests)
+
+  # CPU cost of the engine in typical situations: tests/bench/bench.cpp. Not part of ctest:
+  # timings depend on the machine. Run ./of_bench, or ./of_bench --check against the budgets.
+  add_executable(of_bench tests/bench/bench.cpp)
+  target_link_libraries(of_bench PRIVATE of_dsp)
 endif()
