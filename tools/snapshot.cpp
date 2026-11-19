@@ -177,6 +177,8 @@ int main (int argc, char** argv)
 
     // OF_SNAPSHOT_PIANO=1 renders the main image with the piano strip, for checking it by eye.
     processor.pianoStrip = juce::SystemStats::getEnvironmentVariable ("OF_SNAPSHOT_PIANO", "").isNotEmpty();
+    // OF_SNAPSHOT_SPECTROGRAM=1 renders it in spectrogram view.
+    processor.analyzerSpectrogram = juce::SystemStats::getEnvironmentVariable ("OF_SNAPSHOT_SPECTROGRAM", "").isNotEmpty();
     std::unique_ptr<juce::AudioProcessorEditor> editor (processor.createEditor());
 
     // Run some audio through so the meters and the analyzer show something: pink-ish noise
@@ -196,6 +198,9 @@ int main (int argc, char** argv)
             buffer.setSample (1, i, s);
         }
         processor.processBlock (buffer, midi);
+        if (processor.analyzerSpectrogram)   // one row per update, as the timer would
+            if (auto* ed = dynamic_cast<of::OpenFilterEditor*> (editor.get()))
+                ed->updateNow();
     }
     if (auto* e = dynamic_cast<of::OpenFilterEditor*> (editor.get()))
     {

@@ -44,6 +44,9 @@ public:
     /** speed in dB per second of release; tilt in dB per octave; range in dB below 0 dBFS. */
     void setAnalyzerOptions (float releasePerSecond, float tiltPerOctave, int rangeDb, bool frozen);
     void setPianoStrip (bool show);
+    /** Spectrogram view: the output spectrum over the last 8 seconds, newest at the top, in
+        place of the two traces. */
+    void setSpectrogramView (bool show);
 
     // EQ match: long-term spectra of this track (the plugin input) or the sidechain.
     void startCapture (bool sidechain);
@@ -116,6 +119,13 @@ private:
     int sketchBands = 0;
     std::vector<juce::Point<float>> sketchPoints;
     std::vector<Overlay> overlays;
+
+    // Spectrogram: a ring of rows, one written per analyzer update.
+    void writeSpectrogramRow();
+    static juce::Colour spectrogramColour (float level) noexcept;
+    juce::Image spectrogram;
+    int spectrogramRow = 0;
+    bool spectrogramView = false;
     float overlayTilt = 4.5f;
     juce::Path preFill, postLine;
     std::vector<float> spectrumPoints, spectrumSmooth;

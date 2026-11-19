@@ -318,6 +318,7 @@ void OpenFilterEditor::applyViewSettings()
     constexpr float speeds[] = { 6.0f, 12.0f, 24.0f, 48.0f };
     display.setAnalyzerOptions (speeds[juce::jlimit (0, 3, processor.analyzerSpeed)], processor.analyzerTilt, processor.analyzerRange, processor.analyzerFrozen);
     display.setPianoStrip (processor.pianoStrip);
+    display.setSpectrogramView (processor.analyzerSpectrogram);
     table.setVisible (processor.tableOpen);
     if (! juce::approximatelyEqual (processor.uiScale, static_cast<float> (getTransform().getScaleFactor())))
         setScaleFactor (processor.uiScale);
@@ -348,6 +349,9 @@ void OpenFilterEditor::showViewMenu()
     juce::PopupMenu analyzer;
     analyzer.addItem (2, "Show", true, processor.analyzerOn);
     analyzer.addItem (4, "Freeze", processor.analyzerOn, processor.analyzerFrozen);
+    analyzer.addSeparator();
+    analyzer.addItem (7300, "View: input and output traces", true, ! processor.analyzerSpectrogram);
+    analyzer.addItem (7301, "View: spectrogram of the output", true, processor.analyzerSpectrogram);
     analyzer.addSeparator();
     const char* speedNames[] = { "Speed: slow", "Speed: medium", "Speed: fast", "Speed: very fast" };
     for (int i = 0; i < 4; ++i)
@@ -406,6 +410,7 @@ void OpenFilterEditor::showViewMenu()
         }
         else if (result >= 8000) safe->display.beginSketch (result - 8000);
         else if (result == 4) proc.analyzerFrozen = ! proc.analyzerFrozen;
+        else if (result >= 7300) proc.analyzerSpectrogram = result == 7301;
         else if (result >= 7200) proc.analyzerRange = result - 7200;
         else if (result >= 7100) proc.analyzerTilt = static_cast<float> (result - 7100) / 10.0f;
         else if (result >= 7000) proc.analyzerSpeed = result - 7000;

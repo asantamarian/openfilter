@@ -67,6 +67,13 @@ if(OF_BUILD_PLUGIN)
     LV2URI                      "https://github.com/OWNER/openfilter/eq"   # placeholder: set before first release, permanent afterwards
     COPY_PLUGIN_AFTER_BUILD     ${OF_INSTALL_AFTER_BUILD})
 
+  # Fonts (SIL Open Font License; the licence texts sit next to them in assets/fonts).
+  juce_add_binary_data(OpenFilterAssets SOURCES
+    assets/fonts/Inter-Regular.ttf
+    assets/fonts/Inter-SemiBold.ttf
+    assets/fonts/JetBrainsMono-Regular.ttf)
+  set_target_properties(OpenFilterAssets PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
   target_sources(OpenFilterEQ PRIVATE
     src/plugin/Parameters.cpp
     src/plugin/Presets.cpp
@@ -88,7 +95,7 @@ if(OF_BUILD_PLUGIN)
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0)
   target_link_libraries(OpenFilterEQ
-    PRIVATE of_dsp juce::juce_audio_utils juce::juce_audio_formats juce::juce_dsp
+    PRIVATE of_dsp OpenFilterAssets juce::juce_audio_utils juce::juce_audio_formats juce::juce_dsp
     PUBLIC  juce::juce_recommended_config_flags
             juce::juce_recommended_warning_flags)
 
@@ -110,7 +117,8 @@ if(OF_BUILD_PLUGIN)
   # It reuses the plugin's own compiled code, so it borrows that target's include paths and
   # definitions instead of compiling the JUCE modules a second time.
   add_executable(of_snapshot tools/snapshot.cpp)
-  target_include_directories(of_snapshot PRIVATE $<TARGET_PROPERTY:OpenFilterEQ,INCLUDE_DIRECTORIES>)
+  target_include_directories(of_snapshot PRIVATE $<TARGET_PROPERTY:OpenFilterEQ,INCLUDE_DIRECTORIES>
+                                                 $<TARGET_PROPERTY:OpenFilterAssets,INTERFACE_INCLUDE_DIRECTORIES>)
   target_compile_definitions(of_snapshot PRIVATE $<TARGET_PROPERTY:OpenFilterEQ,COMPILE_DEFINITIONS>)
   target_link_libraries(of_snapshot PRIVATE OpenFilterEQ)
 

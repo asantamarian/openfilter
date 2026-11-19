@@ -2,6 +2,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <BinaryData.h>
+
 /** Design tokens of the default theme "Nocturne" (docs/spec/05-ui.md section 2). */
 namespace of::theme
 {
@@ -27,14 +29,36 @@ inline juce::Colour band (int index)
     return colours[static_cast<size_t> (index & 7)];
 }
 
+// The interface carries its own fonts, so it looks the same on every machine: Inter for
+// text, JetBrains Mono for numbers. Loaded once per process.
+inline juce::Typeface::Ptr interRegular()
+{
+    static const auto face = juce::Typeface::createSystemTypefaceFor (BinaryData::InterRegular_ttf, BinaryData::InterRegular_ttfSize);
+    return face;
+}
+
+inline juce::Typeface::Ptr interSemiBold()
+{
+    static const auto face = juce::Typeface::createSystemTypefaceFor (BinaryData::InterSemiBold_ttf, BinaryData::InterSemiBold_ttfSize);
+    return face;
+}
+
+inline juce::Typeface::Ptr jetBrainsMono()
+{
+    static const auto face = juce::Typeface::createSystemTypefaceFor (BinaryData::JetBrainsMonoRegular_ttf, BinaryData::JetBrainsMonoRegular_ttfSize);
+    return face;
+}
+
 inline juce::Font ui (float size, bool bold = false)
 {
-    return juce::Font (juce::FontOptions (size, bold ? juce::Font::bold : juce::Font::plain));
+    // Point height is the font's nominal size (its em), which is what the design sizes mean;
+    // plain height would be the whole line, and text would come out about a fifth smaller.
+    return juce::Font (juce::FontOptions (bold ? interSemiBold() : interRegular()).withPointHeight (size));
 }
 
 inline juce::Font mono (float size)
 {
-    return juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), size, juce::Font::plain));
+    return juce::Font (juce::FontOptions (jetBrainsMono()).withPointHeight (size * 0.96f));
 }
 
 /** Neon look: a stroke with a soft halo of its own colour, built from wider, fainter
@@ -70,6 +94,12 @@ inline void fillGlowEllipse (juce::Graphics& g, juce::Rectangle<float> area, juc
 class NeonLook final : public juce::LookAndFeel_V4
 {
 public:
+    // Buttons, lists and menus use the bundled font too.
+    juce::Typeface::Ptr getTypefaceForFont (const juce::Font& font) override
+    {
+        return font.isBold() ? interSemiBold() : interRegular();
+    }
+
     void drawButtonBackground (juce::Graphics& g, juce::Button& button, const juce::Colour&, bool over, bool down) override
     {
         const auto area = button.getLocalBounds().toFloat().reduced (1.0f);

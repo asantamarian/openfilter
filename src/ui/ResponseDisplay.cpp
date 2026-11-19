@@ -152,6 +152,8 @@ void ResponseDisplay::refresh()
     if (preLive || postLive || spectraShown)
     {
         spectraShown = preLive || postLive;
+        if (spectrogramView && spectraShown)
+            writeSpectrogramRow();
         rebuildSpectra();
         repaint();
     }
@@ -340,6 +342,47 @@ void ResponseDisplay::beginSketch (int numBands)
     repaint();
 }
 
+void ResponseDisplay::setSpectrogramView (bool show)
+{
+    if (show == spectrogramView)
+        return;
+    spectrogramView = show;
+    spectrogram = {};   // start with a clean history
+    repaint();
+}
+
+juce::Colour ResponseDisplay::spectrogramColour (float level) noexcept
+{
+    // Quiet to loud: nothing, indigo, the accent, amber, white.
+    static const juce::Colour stops[] = { juce::Colour (0x00161A40), juce::Colour (0xff343CA8), juce::Colour (0xff6EE7C5),
+                                          juce::Colour (0xffFFB454), juce::Colour (0xffFFFFFF) };
+    static const float at[] = { 0.0f, 0.38f, 0.64f, 0.84f, 1.0f };
+    level = juce::jlimit (0.0f, 1.0f, level);
+    for (int i = 0; i < 4; ++i)
+        if (level <= at[i + 1])
+            return stops[i].interpolatedWith (stops[i + 1], (level - at[i]) / (at[i + 1] - at[i]));
+    return stops[4];
+}
+
+void ResponseDisplay::writeSpectrogramRow()
+{
+    constexpr int rows = 240;   // 8 seconds at 30 updates a second
+    const int columns = juce::jmax (64, getWidth() / 2);
+    if (spectrogram.getWidth() != columns || spectrogram.getHeight() != rows)
+    {
+        spectrogram = juce::Image (juce::Image::ARGB, columns, rows, true);
+        spectrogramRow = 0;
+    }
+    spectrogramRow = (spectrogramRow + rows - 1) % rows;   // the newest row moves up the ring
+    juce::Image::BitmapData data (spectrogram, 0, spectrogramRow, columns, 1, juce::Image::BitmapData::writeOnly);
+    const float step = static_cast<float> (getWidth()) / static_cast<float> (columns);
+    for (int c = 0; c < columns; ++c)
+    {
+        const float db = postAnalyzer.peakBetween (xToFreq (static_cast<float> (c) * step), xToFreq (static_cast<float> (c + 1) * step));
+        data.setPixelColour (c, 0, spectrogramColour ((db + analyzerRange) / analyzerRange));
+    }
+}
+
 void ResponseDisplay::setPianoStrip (bool show)
 {
     piano = show;
@@ -479,8 +522,22 @@ void ResponseDisplay::paint (juce::Graphics& g)
         juce::Graphics::ScopedSaveState clip (g);
         g.reduceClipRegion (0, 0, getWidth(), getHeight() - kAxisHeight);
 
-        // Analyzer: input as a quiet fill, output as an accent line.
-        if (! preFill.isEmpty())
+        // Analyzer: a scrolling spectrogram of the output, or the input as a quiet fill with
+        // the output as an accent line.
+        if (spectrogramView && spectrogram.isValid())
+        {
+            // The ring is drawn in two pieces so the newest row is always at the top.
+            const int rows = spectrogram.getHeight(), cols = spectrogram.getWidth();
+            const int firstPiece = rows - spectrogramRow;
+            const int splitY = juce::roundToInt (plotBottom * static_cast<float> (firstPiece) / static_cast<float> (rows));
+            g.setImageResamplingQuality (juce::Graphics::lowResamplingQuality);
+            g.setOpacity (0.9f);
+            g.drawImage (spectrogram, 0, 0, getWidth(), splitY, 0, spectrogramRow, cols, firstPiece);
+            if (spectrogramRow > 0)
+                g.drawImage (spectrogram, 0, splitY, getWidth(), juce::roundToInt (plotBottom) - splitY, 0, 0, cols, spectrogramRow);
+            g.setOpacity (1.0f);
+        }
+        else if (! preFill.isEmpty())
         {
             g.setGradientFill (juce::ColourGradient (juce::Colour (0xff6C7BFF).withAlpha (0.26f), 0.0f, 0.0f,
                                                      juce::Colour (0xff6C7BFF).withAlpha (0.04f), 0.0f, plotBottom, false));

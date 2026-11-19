@@ -39,6 +39,12 @@ handed to the UI through an `AtomicSnapshot`.
 
 ### 1.3 Spectrogram view
 
+**Built** as described below, for the output spectrum: 240 rows (8 s at 30 updates
+a second) in a ring image half the plot's width, one row written per analyzer
+update and drawn in two pieces so the newest is at the top. The colour ramp runs
+from nothing through indigo, the accent and amber to white and is fixed in code
+for now (the theme key arrives with theme files).
+
 Alternative to the trace: a scrolling image, time on the vertical axis (newest at
 the top), same log frequency axis as the display, 8 s history. Each new frame
 writes one pixel row into a ring `juce::Image`; colour is a perceptually uniform

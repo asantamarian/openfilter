@@ -32,7 +32,8 @@ Milestone M1 (static EQ, zero latency) is built and M2 (full UI) is under way. B
 | Nine factory presets; analyzer speed, tilt, range and freeze; piano strip; number keys to select bands; copy, paste and duplicate bands | Built |
 | Multi-band selection (shift-click, rubber band, Ctrl/Cmd+A) with group drag, scroll, nudge, copy and delete; paged dock; minimum window 800 x 560 | Built |
 | Advanced panel: character and drive, free detector filter, knee, trigger, spectral resolution; dock edits apply to every selected band | Built |
-| Spectrogram, full screen, embedded fonts | Not yet |
+| Spectrogram view of the output (8 seconds, newest at the top); bundled fonts, so it looks the same on every machine | Built |
+| Full-screen mode | Not yet |
 | EQ match (reference from the sidechain or an audio file) and curve sketching, on a shared curve fitter; sidechain trace in the analyzer | Built (M6) |
 | Instance hub: other instances in the same process drawn over the display, with collision strips | Built (M6) |
 | Editing another instance from this window; instances in other processes; matching to another instance | Not yet |
@@ -79,6 +80,8 @@ your DAW picks up the new version. Pass `-DOF_INSTALL_AFTER_BUILD=OFF` to turn t
 off. The `Standalone/OpenFilter EQ` binary runs on its own.
 
 Licence: AGPL-3.0-or-later (see `LICENSE`), as required by the open-source JUCE licence.
+The bundled fonts, Inter and JetBrains Mono, are under the SIL Open Font License; their
+licence texts are in `assets/fonts/`.
 
 ## Specs
 
