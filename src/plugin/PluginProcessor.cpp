@@ -22,7 +22,11 @@ OpenFilterProcessor::OpenFilterProcessor()
         bandPtrs[static_cast<size_t> (b)] = { raw (id ("used")), raw (id ("on")), raw (id ("shape")), raw (id ("slope")),
                                               raw (id ("freq")), raw (id ("gain")), raw (id ("q")), raw (id ("place")),
                                               raw (id ("dyn")), raw (id ("range")), raw (id ("thr")), raw (id ("athr")), raw (id ("ratio")),
-                                              raw (id ("knee")), raw (id ("atk")), raw (id ("rel")), raw (id ("trig")), raw (id ("sc")), raw (id ("lin")) };
+                                              raw (id ("knee")), raw (id ("atk")), raw (id ("rel")), raw (id ("trig")), raw (id ("sc")), raw (id ("lin")),
+                                              raw (id ("smode")), raw (id ("sres")) };
+        // Whether any band is spectral decides the latency, so these are watched too.
+        for (const char* suffix : { "dyn", "used", "shape" })
+            apvts.addParameterListener (id (suffix), this);
     }
     gainScalePtr = raw ("gain_scale");
     outGainPtr = raw ("out_gain");
@@ -42,6 +46,9 @@ OpenFilterProcessor::~OpenFilterProcessor()
 {
     apvts.removeParameterListener ("phase_mode", this);
     apvts.removeParameterListener ("lin_quality", this);
+    for (int b = 0; b < kMaxBands; ++b)
+        for (const char* suffix : { "dyn", "used", "shape" })
+            apvts.removeParameterListener (params::bandId (b, suffix), this);
     cancelPendingUpdate();
 }
 
@@ -49,7 +56,9 @@ void OpenFilterProcessor::updateLatency()
 {
     const int mode = juce::roundToInt (phaseModePtr->load());
     const double rate = getSampleRate() > 0.0 ? getSampleRate() : 48000.0;
-    setLatencySamples (Engine::latencyFor (mode, rate, juce::roundToInt (linQualityPtr->load())));
+    ParamSnapshot snapshot;
+    readSnapshot (snapshot);
+    setLatencySamples (Engine::latencyFor (mode, rate, juce::roundToInt (linQualityPtr->load()), snapshot.wantsSpectral()));
 }
 
 //==============================================================================
@@ -91,8 +100,12 @@ void OpenFilterProcessor::readSnapshot (ParamSnapshot& s) const noexcept
         out.freq = f (p.freq);
         out.gainDb = f (p.gain);
         out.q = f (p.q);
-        // Dynamics mode 1 is Dynamic; 2 (Spectral) is not built yet and behaves as Off.
-        out.dyn.on = juce::roundToInt (f (p.dyn)) == 1;
+        // Dynamics mode: 0 off, 1 dynamic (one gain for the band), 2 spectral (a gain per bin).
+        const int dynMode = juce::roundToInt (f (p.dyn));
+        out.dyn.on = dynMode >= 1;
+        out.dyn.spectral = dynMode == 2;
+        out.dyn.resonance = f (p.smode) > 0.5f;
+        out.dyn.resolutionOct = f (p.sres);
         out.dyn.rangeDb = f (p.range);
         out.dyn.thresholdDb = f (p.thr);
         out.dyn.autoThreshold = f (p.athr) > 0.5f;

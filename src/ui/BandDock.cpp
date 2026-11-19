@@ -19,11 +19,15 @@ BandDock::BandDock (OpenFilterProcessor& p) : processor (p)
     for (auto* c : { &shapeBox, &slopeBox, &placeBox })
         addAndMakeVisible (*c);
 
-    // Spectral is in the parameter already but not built yet.
-    dynBox.addItemList ({ "Static", "Dynamic", "Spectral (not yet)" }, 1);
-    dynBox.setItemEnabled (3, false);
+    dynBox.addItemList ({ "Static", "Dynamic", "Spectral" }, 1);
     dynBox.setTitle ("Dynamics mode");
-    dynBox.setTooltip ("Dynamic: the band's gain moves by up to Range when the level around the band passes the threshold.");
+    dynBox.setTooltip ("Dynamic: the band's gain moves by up to Range when the level around the band passes the threshold. "
+                       "Spectral: the same, decided separately for every frequency inside the band, so one ringing note can be turned down without its neighbours. Spectral adds 2048 samples of delay.");
+
+    resonanceButton.setClickingTogglesState (true);
+    resonanceButton.setTitle ("Resonance mode");
+    resonanceButton.setTooltip ("Spectral bands only. On: a frequency is treated when it sticks out of the spectrum around it, at any level; Thresh sets by how much. Off: a frequency is treated when it passes the threshold.");
+    addChildComponent (resonanceButton);
     addAndMakeVisible (dynBox);
 
     autoButton.setClickingTogglesState (true);
@@ -60,6 +64,8 @@ BandDock::BandDock (OpenFilterProcessor& p) : processor (p)
         if (p == nullptr)
             return juce::String();
         const float thr = p->convertFrom0to1 (p->getValue());
+        if (current.dyn.spectral && current.dyn.resonance)   // how far a frequency must stick out
+            return juce::String ((thr + 90.0f) / 90.0f * 24.0f, 1) + " dB out";
         if (band >= 0 && current.dyn.autoThreshold)   // read as an offset around the program level
             return params::formatGain ((thr + 90.0f) / 90.0f * 60.0f - 30.0f) + " rel";
         return p->getCurrentValueAsText();
@@ -97,6 +103,7 @@ void BandDock::setBand (int newBand)
     dynAttachment.reset();
     autoAttachment.reset();
     linearAttachment.reset();
+    resonanceAttachment.reset();
 
     const bool has = band >= 0;
     if (has)
@@ -107,6 +114,7 @@ void BandDock::setBand (int newBand)
         dynAttachment = std::make_unique<ComboAttachment> (processor.apvts, params::bandId (band, "dyn"), dynBox);
         autoAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (processor.apvts, params::bandId (band, "athr"), autoButton);
         linearAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (processor.apvts, params::bandId (band, "lin"), linearButton);
+        resonanceAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (processor.apvts, params::bandId (band, "smode"), resonanceButton);
     }
     const auto bind = [&] (Dial& d, const char* suffix) { d.attach (has ? processor.bandParam (band, suffix) : nullptr, &processor.undo); };
     bind (thrDial, "thr");
@@ -161,13 +169,18 @@ void BandDock::refresh()
         const bool canDyn = canBeDynamic (b.shape);
         const bool dynOn = canDyn && b.dyn.on;
         dynBox.setEnabled (canDyn);
-        autoButton.setEnabled (dynOn);
+        // Spectral bands swap the sidechain button for the resonance switch; in resonance
+        // mode the threshold is relative by nature, so Auto does not apply.
+        const bool spectralBand = dynOn && b.dyn.spectral;
+        externalButton.setVisible (! spectralBand);
+        resonanceButton.setVisible (spectralBand);
+        autoButton.setEnabled (dynOn && ! (spectralBand && b.dyn.resonance));
         externalButton.setEnabled (dynOn);
         externalButton.setToggleState (dynOn && b.dyn.external, juce::dontSendNotification);
         for (auto* d : { &thrDial, &rangeDial, &ratioDial, &atkDial, &relDial })
             d->setDimmed (! dynOn);
 
-        const float live = dynOn ? processor.dynamicGainDb (band) : 0.0f;
+        const float live = dynOn ? processor.dynamicGainDb (band) : 0.0f;   // for a spectral band: its strongest frequency
         if (std::abs (live - liveDyn) > 0.05f)
         {
             liveDyn = live;
@@ -231,7 +244,7 @@ void BandDock::paint (juce::Graphics& g)
     g.fillRect (dynArea.getX() - 13, 14, 1, getHeight() - 28);
 
     // Live dynamic gain of the selected band.
-    if (band >= 0 && current.dyn.on && canBeDynamic (current.shape))
+    if (band >= 0 && current.dyn.on && canBeDynamic (current.shape))   // dynamic or spectral
     {
         g.setColour (theme::band (band));
         g.setFont (theme::mono (11.0f));
@@ -292,6 +305,7 @@ void BandDock::resized()
     autoButton.setBounds (modeColumn.removeFromTop (28));
     modeColumn.removeFromTop (6);
     externalButton.setBounds (modeColumn.removeFromTop (28));
+    resonanceButton.setBounds (externalButton.getBounds());
     d.removeFromLeft (8);
     for (auto* dial : { &thrDial, &rangeDial, &ratioDial, &atkDial, &relDial })
     {

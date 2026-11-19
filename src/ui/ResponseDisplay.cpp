@@ -111,7 +111,8 @@ void ResponseDisplay::refresh()
     bool dynMoved = false;
     for (int i = 0; i < kMaxBands; ++i)
     {
-        const float d = bands[static_cast<size_t> (i)].dynamic() ? processor.dynamicGainDb (i) : 0.0f;
+        const auto& lb = bands[static_cast<size_t> (i)];
+        const float d = lb.dynamic() || lb.spectral() ? processor.dynamicGainDb (i) : 0.0f;
         dynMoved = dynMoved || std::abs (d - liveDyn[static_cast<size_t> (i)]) > 0.05f;
         liveDyn[static_cast<size_t> (i)] = d;
     }
@@ -241,7 +242,7 @@ void ResponseDisplay::rebuildCurves()
 
     // A dynamic band also shows where it ends up at full detection.
     Prototype rangeProto;
-    const bool showRange = hasSelection && bands[static_cast<size_t> (selected)].dynamic();
+    const bool showRange = hasSelection && (bands[static_cast<size_t> (selected)].dynamic() || bands[static_cast<size_t> (selected)].spectral());
     if (showRange)
     {
         auto b = bands[static_cast<size_t> (selected)];
@@ -379,7 +380,7 @@ void ResponseDisplay::paint (juce::Graphics& g)
         const auto circle = juce::Rectangle<float> (2.0f * kNodeRadius, 2.0f * kNodeRadius).withCentre (p);
 
         // A dynamic band shows its live gain as a marker on a stem from the node.
-        if (b.dynamic())
+        if (b.dynamic() || b.spectral())
         {
             const float liveY = dbToY ((b.gainDb + liveDyn[static_cast<size_t> (i)]) * scale);
             g.setColour (c.withAlpha (0.7f));

@@ -27,6 +27,7 @@ add_library(of_dsp STATIC
   src/dsp/design/MatchedDesign.cpp
   src/dsp/kernel/ChannelFilter.cpp
   src/dsp/lanes/FirLane.cpp
+  src/dsp/lanes/SpectralLane.cpp
   src/dsp/Engine.cpp)
 target_include_directories(of_dsp PUBLIC src)
 target_compile_options(of_dsp PRIVATE ${OF_WARNINGS})
@@ -118,7 +119,8 @@ if(OF_BUILD_TESTS)
     tests/unit/engine_tests.cpp
     tests/unit/natural_tests.cpp
     tests/unit/dynamics_tests.cpp
-    tests/unit/linear_tests.cpp)
+    tests/unit/linear_tests.cpp
+    tests/unit/spectral_tests.cpp)
   target_link_libraries(of_tests PRIVATE of_dsp Catch2::Catch2WithMain)
   add_test(NAME of_tests COMMAND of_tests)
 endif()

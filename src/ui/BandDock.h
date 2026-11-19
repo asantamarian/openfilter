@@ -38,7 +38,8 @@ private:
     std::unique_ptr<ComboAttachment> shapeAttachment, slopeAttachment, placeAttachment, dynAttachment;
     Dial freqDial { "Freq" }, gainDial { "Gain" }, qDial { "Q" };
     Dial thrDial { "Thresh" }, rangeDial { "Range" }, ratioDial { "Ratio" }, atkDial { "Attack" }, relDial { "Release" };
-    juce::TextButton autoButton { "Auto" }, externalButton { "Ext SC" }, soloButton { "Solo" }, linearButton { "Lin" };
+    juce::TextButton autoButton { "Auto" }, externalButton { "Ext SC" }, soloButton { "Solo" }, linearButton { "Lin" }, resonanceButton { "Reson" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> resonanceAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> linearAttachment;
     bool mixedMode = false;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoAttachment;

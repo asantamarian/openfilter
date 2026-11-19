@@ -89,7 +89,7 @@ public:
 
 private:
     struct BandPtrs { std::atomic<float>* used, *on, *shape, *slope, *freq, *gain, *q, *place,
-                                        * dyn, *range, *thr, *athr, *ratio, *knee, *atk, *rel, *trig, *sc, *lin; };
+                                        * dyn, *range, *thr, *athr, *ratio, *knee, *atk, *rel, *trig, *sc, *lin, *smode, *sres; };
 
     void readSnapshot (ParamSnapshot&) const noexcept;
     // The phase mode changes latency; the host is told from the message thread.

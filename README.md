@@ -27,7 +27,8 @@ Milestone M1 (static EQ, zero latency) is built and M2 (full UI) is under way. B
 | Linear phase (five kernel lengths) and Mixed phase (per-band choice), designed on a worker thread (M4) | Built |
 | Dynamics for bands in the linear-phase path | Not yet |
 | Auto gain: estimated from the curve, or loudness matched (K-weighted, input against output) | Built (M5) |
-| Spectral bands, character, instance linking, EQ match, CLAP, accessibility pass (M5 to M7) | Not yet |
+| Spectral bands: a gain per frequency inside the band, with absolute and resonance modes | Built (M5) |
+| Character (saturation), instance linking, EQ match, CLAP, accessibility pass (M5 to M7) | Not yet |
 
 Known gaps:
 

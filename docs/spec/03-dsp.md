@@ -323,26 +323,42 @@ host rate on the undelayed input, which gives it about 0.8 ms of look-ahead at
 
 ## 8. Spectral bands
 
-One shared STFT lane serves all spectral bands of a channel.
+One shared short-time Fourier stage (`of::SpectralLane`) serves all spectral bands.
+It sits after the minimum-phase bands and before the linear-phase lane.
 
 - Frame `N = 2048` (at 44.1/48 kHz, scaled with rate), hop `N/4`, square-root Hann
   analysis and synthesis windows, output scaled by 1/2. Latency `N`.
-- A second STFT analyses the detector bus with the same framing.
-- Per band and bin `k` with detector level `L_k` (dB):
-  - **Absolute**: `x_k = L_k - T`, threshold as in §7 (auto supported, per band).
-  - **Resonance**: `x_k = L_k - E_k - rel`, where `E_k` is the detector power
-    spectrum smoothed over one octave in log frequency and
-    `rel = jmap(thr, -90, 0, 0, 24)` dB. Auto threshold is ignored.
+- The stage exists, and its latency is reported, whenever any used band is set to
+  Spectral. Adding the first or removing the last spectral band is a latency change
+  and is handled like a phase-mode switch (reconfigure, 10 ms fade-in).
+- Detection uses the stage's own input, the signal after the minimum-phase bands
+  (not a separate transform of the dry input). Power per bin is taken as the band's
+  placement hears it: left, right, mid, side, or the louder of left and right.
+- Per band and bin `k` with level `L_k` (dB, a full-scale sine reads 0):
+  - **Absolute**: `x_k = L_k - T`. Auto threshold: `T` is the long-term power
+    inside the band (weighted by its shape, 3 s) plus the offset.
+  - **Resonance**: `x_k = L_k - E_k - rel`, where `E_k` is the power spectrum
+    averaged over one octave around the bin and `rel = (thr + 90) / 90 * 24` dB.
+    Auto threshold does not apply.
   - `target_k = sign(range) * min(softKnee(x_k) * (1 - 1/R), |range|) * w_k`,
     where `w_k = |dB_i(f_k; gain = range)| / |range|` is the band's own shape used
     as a 0..1 weight.
-  - Smooth `target_k` across frequency with a Gaussian of width `sres` octaves,
-    then across time with attack and release (coefficients from the hop time).
-- Sum the dB targets of all spectral bands per bin, convert to linear gain,
-  multiply the complex bins of the audio STFT (zero phase), resynthesise.
-- The static part of a spectral band (`gain`) is a normal band in its IIR or FIR
-  lane.
-- When no spectral band is active the lane is bypassed and removed from latency.
+  - **Main-lobe widening**: each bin takes the strongest target within two bins
+    either side. One partial lands on several neighbouring bins and only the middle
+    one reads its full level; without this step the frequency smoothing dilutes
+    the reduction (measured: 3 dB instead of about 10 on a lone tone).
+  - Average across frequency over `sres` octaves (window width proportional to
+    frequency), then smooth in time with attack and release.
+- Sum the dB gains of all spectral bands per bin and placement, apply left and
+  right gains, then mid and side gains, as zero-phase multiplications; resynthesise.
+- The static part of a spectral band (`gain`) is a normal band in its own lane.
+- The display's live marker for a spectral band shows its strongest bin.
+
+Verified by `tests/unit/spectral_tests.cpp`: latency and transparency when nothing
+triggers (reconstruction error under 1e-9); a loud partial reduced by more than
+8 dB while a quiet tone in the same band stays within 1 dB, where an ordinary
+dynamic band pulls both down; resonance mode pulling a tone out of noise equally
+at -12 and -36 dBFS and leaving plain noise within 1 dB.
 
 ## 9. Character stage
 

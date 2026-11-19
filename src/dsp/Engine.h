@@ -3,6 +3,7 @@
 #include "dynamics/Detector.h"
 #include "kernel/ChannelFilter.h"
 #include "lanes/FirLane.h"
+#include "lanes/SpectralLane.h"
 #include "util/Halfband.h"
 
 #include <atomic>
@@ -82,7 +83,7 @@ public:
     /** Latency a mode will have at a sample rate: lets the plugin tell the host from the
         message thread. Phase modes: 0 zero latency, 1 natural, 2 linear, 3 mixed. linQuality
         (0..4) only matters for linear and mixed. */
-    static int latencyFor (int phaseMode, double sampleRate, int linQuality = 1) noexcept;
+    static int latencyFor (int phaseMode, double sampleRate, int linQuality = 1, bool spectral = false) noexcept;
 
     /** For tests: true once the linear-phase kernel matches the bands last sent to it. */
     bool linearSettled() const noexcept;
@@ -93,7 +94,11 @@ public:
     float autoGainDb() const noexcept { return autoGainShown.load (std::memory_order_relaxed); }
 
     /** Current dynamic gain of a band in dB, for the display. */
-    float dynamicGainDb (int band) const noexcept { return dynGains[static_cast<size_t> (band)].load (std::memory_order_relaxed); }
+    float dynamicGainDb (int band) const noexcept
+    {
+        const float d = dynGains[static_cast<size_t> (band)].load (std::memory_order_relaxed);
+        return d != 0.0f || ! spectralOn ? d : spectral.activityDb (band);   // spectral bands report their strongest bin
+    }
 
     /** Peak since the last call (linear). Called by the UI. */
     float takePeak (int channel) noexcept { return peaks[static_cast<size_t> (channel & 1)].exchange (0.0f, std::memory_order_relaxed); }
@@ -121,7 +126,7 @@ private:
     ParamSnapshot autoSeen {};
     bool autoSeenValid = false;
     std::atomic<float> autoGainShown { 0.0f };
-    void configure (int mode, int quality) noexcept;
+    void configure (int mode, int quality, bool withSpectral) noexcept;
     void postFirRequest (const ParamSnapshot& params) noexcept;
     void workerLoop();
     void stopWorker();
@@ -150,6 +155,8 @@ private:
         int count = 0, quality = 1;
         bool operator== (const FirRequest&) const = default;
     };
+    SpectralLane spectral;
+    bool spectralOn = false;
     FirLane fir;
     bool firMode = false, firRepost = false;
     FirRequest lastRequest {}, mail {};

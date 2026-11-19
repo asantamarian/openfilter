@@ -266,15 +266,16 @@ int Engine::oversamplingFor (int phaseMode, double sampleRate) noexcept
     return sampleRate < 70000.0 ? 4 : sampleRate < 140000.0 ? 2 : 1;
 }
 
-int Engine::latencyFor (int phaseMode, double sampleRate, int linQuality) noexcept
+int Engine::latencyFor (int phaseMode, double sampleRate, int linQuality, bool withSpectral) noexcept
 {
+    const int extra = withSpectral ? SpectralLane::frameFor (sampleRate) : 0;
     if (phaseMode == 2 || phaseMode == 3)
-        return FirLane::latencyFor (linQuality, sampleRate);
+        return FirLane::latencyFor (linQuality, sampleRate) + extra;
     switch (oversamplingFor (phaseMode, sampleRate))
     {
-        case 4:  return kSteepHalf + (kWideHalf + 1) / 2;   // 69 + 7
-        case 2:  return kWideHalf;                          // 13
-        default: return 0;
+        case 4:  return kSteepHalf + (kWideHalf + 1) / 2 + extra;   // 69 + 7
+        case 2:  return kWideHalf + extra;                          // 13
+        default: return extra;
     }
 }
 
@@ -324,31 +325,34 @@ void Engine::prepare (double sampleRate, int maxBlock, int)
         d.assign (static_cast<size_t> (std::max (1, maxBlock)), 0.0);
 
     fir.prepare (sampleRate);
+    spectral.prepare (sampleRate);
     kDry.prepare (sampleRate);
     kWet.prepare (sampleRate);
     loudCoef = 1.0 - std::exp (-1.0 / (1.5 * sampleRate));   // about a 3 s window
     int delaySize = 256;
-    while (delaySize < FirLane::latencyFor (4, sampleRate) + 16)
+    while (delaySize < FirLane::latencyFor (4, sampleRate) + SpectralLane::frameFor (sampleRate) + 16)
         delaySize <<= 1;
     delayMask = delaySize - 1;
     for (auto& ch : stages)
         ch.delay.assign (static_cast<size_t> (delaySize), 0.0);
 
     doneSerial.store (mailSerial.load());
-    configure (phaseMode, linQuality);
+    configure (phaseMode, linQuality, spectralOn);
     reset();
 
     workerRunning.store (true);
     worker = std::thread ([this] { workerLoop(); });
 }
 
-void Engine::configure (int mode, int quality) noexcept
+void Engine::configure (int mode, int quality, bool withSpectral) noexcept
 {
     phaseMode = mode;
     linQuality = quality;
+    spectralOn = withSpectral;
+    spectral.reset();
     firMode = mode == 2 || mode == 3;
     factor = oversamplingFor (mode, fs);
-    latency.store (latencyFor (mode, fs, quality), std::memory_order_relaxed);
+    latency.store (latencyFor (mode, fs, quality, withSpectral), std::memory_order_relaxed);
     for (auto& ch : stages)
     {
         ch.first.design (factor == 4 ? kSteepHalf : kWideHalf);
@@ -411,6 +415,7 @@ void Engine::reset() noexcept
         std::fill (ch.delay.begin(), ch.delay.end(), 0.0);
     }
     delayPos = 0;
+    spectral.reset();
     if (firMode)
     {
         fir.reset (linQuality);
@@ -438,13 +443,30 @@ void Engine::reset() noexcept
 void Engine::updateTargets (const ParamSnapshot& params, bool mono) noexcept
 {
     const int quality = std::clamp (params.linQuality, 0, 4);
-    if (params.phaseMode != phaseMode || (firMode && quality != linQuality))
+    const bool wantSpectral = params.wantsSpectral();
+    if (params.phaseMode != phaseMode || (firMode && quality != linQuality) || wantSpectral != spectralOn)
     {
-        // A different phase mode or kernel length changes latency. Neither is automatable,
-        // so a short fade-in after the switch is enough.
+        // A different phase mode, kernel length, or the first or last spectral band changes
+        // latency. None of these is automatable, so a short fade-in after the switch is enough.
         const bool wasFresh = fresh;
-        configure (params.phaseMode, quality);
+        configure (params.phaseMode, quality, wantSpectral);
         modeFade = wasFresh ? 1.0 : 0.0;
+    }
+    if (spectralOn)
+    {
+        BandParams list[kMaxBands];
+        int slots[kMaxBands], count = 0;
+        for (int i = 0; i < kMaxBands; ++i)
+        {
+            BandParams p = params.bands[static_cast<size_t> (i)];
+            p.dyn.rangeDb = std::clamp (p.dyn.rangeDb * params.gainScale, -60.0, 60.0);
+            if (p.spectral())
+            {
+                list[count] = p;
+                slots[count++] = i;
+            }
+        }
+        spectral.setBands (list, slots, count);
     }
     if (firMode)
         postFirRequest (params);
@@ -739,6 +761,10 @@ void Engine::processSegment (double* const* io, int numChannels, int offset, int
                 std::copy_n (dryR, n, right);
         }
     }
+
+    // Spectral bands: one short-time Fourier stage after the others, adding one frame of delay.
+    if (spectralOn)
+        spectral.process (left, right, n);
 
     // Loudness-matched auto gain listens to the delayed input and to the processed signal.
     if (autoMode == 2)

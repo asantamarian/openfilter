@@ -216,6 +216,30 @@ void testPlugin (juce::AudioPluginFormatManager& formats, const juce::String& pa
     else
         check (false, "parameter not found: Phase Mode");
 
+    // 2bb. A spectral band adds one 2048-sample frame of latency, and removing it takes it away.
+    if (auto* dyn = findParam (*plugin, "Band 1 Dynamics Mode"))
+    {
+        juce::AudioBuffer<float> buffer (channels, 512);
+        const auto settleLatency = [&]
+        {
+            for (int block = 0; block < 6; ++block)
+            {
+                buffer.clear();
+                plugin->processBlock (buffer, midi);
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
+            }
+        };
+        dyn->setValueNotifyingHost (dyn->getValueForText ("Spectral"));
+        settleLatency();
+        std::printf ("    with a spectral band the host sees %d samples of latency\n", plugin->getLatencySamples());
+        check (plugin->getLatencySamples() == 2048, "a spectral band reports 2048 samples of latency at 48 kHz");
+        dyn->setValueNotifyingHost (0.0f);
+        settleLatency();
+        check (plugin->getLatencySamples() == 0, "latency returns to zero without spectral bands");
+    }
+    else
+        check (false, "parameter not found: Band 1 Dynamics Mode");
+
     // 2c. Sidechain: optional in VST3 (off until the host enables it), always present in LV2.
     std::printf ("    input buses: %d, total input channels: %d\n", plugin->getBusCount (true), plugin->getTotalNumInputChannels());
     check (plugin->getBusCount (true) == 2, "main input plus a sidechain input bus");

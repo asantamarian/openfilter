@@ -51,6 +51,9 @@ struct DynParams
     double releaseMs = 120.0;
     bool below = false;          // act when the level is under the threshold
     bool external = false;       // listen to the sidechain input instead of the plugin input
+    bool spectral = false;       // work per frequency bin instead of on the whole band
+    bool resonance = true;       // spectral: judge each bin against its surroundings, not a level
+    double resolutionOct = 1.0 / 6.0;   // spectral: smoothing of the per-bin gains across frequency
 
     bool operator== (const DynParams&) const = default;
 };
@@ -71,10 +74,16 @@ struct BandParams
 
     bool operator== (const BandParams&) const = default;
 
-    /** True when dynamics are switched on and can do something for this shape. */
+    /** True when band dynamics (one gain for the whole band) are on and can act. */
     bool dynamic() const noexcept
     {
-        return used && on && dyn.on && canBeDynamic (shape) && (dyn.rangeDb > 1.0e-6 || dyn.rangeDb < -1.0e-6);
+        return used && on && dyn.on && ! dyn.spectral && canBeDynamic (shape) && (dyn.rangeDb > 1.0e-6 || dyn.rangeDb < -1.0e-6);
+    }
+
+    /** True when spectral dynamics (a gain per frequency bin) are on and can act. */
+    bool spectral() const noexcept
+    {
+        return used && on && dyn.on && dyn.spectral && canBeDynamic (shape) && (dyn.rangeDb > 1.0e-6 || dyn.rangeDb < -1.0e-6);
     }
 
     /** True when the band changes the signal at all. */
@@ -94,6 +103,15 @@ struct ParamSnapshot
     int phaseMode = 0;       // 0 zero latency, 1 natural, 2 linear, 3 mixed
     int linQuality = 1;      // 0 low .. 4 max: length of the linear-phase kernel
     int autoGain = 0;        // 0 off, 1 from the curve, 2 loudness matched
+
+    /** True when any band slot is set to Spectral: the spectral stage and its latency are in. */
+    bool wantsSpectral() const noexcept
+    {
+        for (const auto& b : bands)
+            if (b.used && b.dyn.on && b.dyn.spectral && canBeDynamic (b.shape))
+                return true;
+        return false;
+    }
     double gainScale = 1.0;
     double outGainDb = 0.0;
     double pan = 0.0;        // -1..1
