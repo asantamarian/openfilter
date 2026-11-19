@@ -37,6 +37,15 @@ public:
     /** A dashed target curve over the display; nullptr removes it. */
     void setTargetCurve (const fit::Curve* target);
 
+    /** Other instances drawn over this display, with where each collides with this one. */
+    struct Overlay
+    {
+        juce::Colour colour;
+        fit::Curve spectrum;    // dB, no tilt
+        fit::Curve collision;   // 0..1
+    };
+    void setOverlays (std::vector<Overlay> overlays);
+
     /** Curve sketching: the next drag draws a curve, which is fitted with this many bands. */
     void beginSketch (int numBands);
     bool sketching() const noexcept { return sketchBands > 0; }
@@ -83,6 +92,8 @@ private:
     bool hasTarget = false;
     int sketchBands = 0;
     std::vector<juce::Point<float>> sketchPoints;
+    std::vector<Overlay> overlays;
+    float overlayTilt = 4.5f;
     juce::Path preFill, postLine;
     std::vector<float> spectrumPoints, spectrumSmooth;
     juce::uint32 lastUpdateMs = 0;

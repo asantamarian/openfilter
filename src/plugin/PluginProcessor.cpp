@@ -43,14 +43,25 @@ OpenFilterProcessor::OpenFilterProcessor()
     characterPtr = raw ("character");
     drivePtr = raw ("drive");
     bypassParam = apvts.getParameter ("bypass");
+    hub->add (*this);
     apvts.addParameterListener ("phase_mode", this);
     apvts.addParameterListener ("lin_quality", this);
     apvts.addParameterListener ("lookahead", this);
     apvts.addParameterListener ("character", this);
 }
 
+void OpenFilterProcessor::updateTrackProperties (const TrackProperties& properties)
+{
+    // Hosts call this on the message thread when the track is named or coloured.
+    if (properties.name.has_value())
+        instanceName = *properties.name;
+    if (properties.colour.has_value())
+        instanceColour = *properties.colour;
+}
+
 OpenFilterProcessor::~OpenFilterProcessor()
 {
+    hub->remove (*this);
     apvts.removeParameterListener ("phase_mode", this);
     apvts.removeParameterListener ("lin_quality", this);
     apvts.removeParameterListener ("lookahead", this);
@@ -206,6 +217,8 @@ void OpenFilterProcessor::process (juce::AudioBuffer<Sample>& buffer)
         engine.process (io, channels, n, snapshot, scUsable ? sc : nullptr, scUsable ? scChannels : 0);
         if (analyse)
             pushTap (postFifo);
+        if (hubFeeding.load (std::memory_order_relaxed))   // other instances want to see this one
+            pushTap (hubFifo);
 
         for (int ch = 0; ch < channels; ++ch)
         {

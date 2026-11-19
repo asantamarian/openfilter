@@ -3,6 +3,7 @@
 #include "PluginProcessor.h"
 #include "ui/BandDock.h"
 #include "ui/BandTable.h"
+#include "ui/InstancePanel.h"
 #include "ui/MatchPanel.h"
 #include "ui/ResponseDisplay.h"
 
@@ -21,6 +22,7 @@ public:
     ResponseDisplay& responseDisplay() noexcept { return display; }
     void updateNow() { timerCallback(); }
     void showMatchPanel (bool show) { matchPanel.setVisible (show); }
+    void showInstancePanel (bool show) { instancePanel.setVisible (show); if (show) instancePanel.showAll(); }
 
 private:
     void timerCallback() override;
@@ -40,6 +42,7 @@ private:
     std::array<juce::TextButton, OpenFilterProcessor::kNumSlots> slotButtons;
     BandTable table;
     MatchPanel matchPanel;
+    InstancePanel instancePanel;
     juce::TooltipWindow tooltips { this };
     juce::ComboBox phaseBox, qualityBox, autoBox;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> autoAttachment;

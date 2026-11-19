@@ -234,6 +234,7 @@ void ResponseDisplay::setAnalyzerOptions (float releasePerSecond, float tiltPerO
         a->setTiltPerOctave (tiltPerOctave);
     }
     analyzerRange = static_cast<float> (rangeDb);
+    overlayTilt = tiltPerOctave;
     if (analyzerFrozen && ! frozen)   // drop what queued up while frozen
     {
         processor.preFifo.clear();
@@ -265,6 +266,14 @@ void ResponseDisplay::setTargetCurve (const fit::Curve* target)
     if (hasTarget)
         targetCurve = *target;
     rebuildCurves();
+    repaint();
+}
+
+void ResponseDisplay::setOverlays (std::vector<Overlay> newOverlays)
+{
+    if (overlays.empty() && newOverlays.empty())
+        return;
+    overlays = std::move (newOverlays);
     repaint();
 }
 
@@ -447,6 +456,37 @@ void ResponseDisplay::paint (juce::Graphics& g)
                 juce::PathStrokeType (1.3f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded).createDashedStroke (dashed, rangePath, dashes, 2);
                 g.setColour (c.withAlpha (0.85f));
                 g.fillPath (dashed);
+            }
+        }
+
+        // Other instances: their spectra in their own colours, and a strip along the bottom
+        // wherever one of them sits in the same place as this instance.
+        const float plotH = static_cast<float> (getHeight() - kAxisHeight);
+        for (size_t o = 0; o < overlays.size(); ++o)
+        {
+            const auto& overlay = overlays[o];
+            juce::Path line;
+            for (int i = 0; i < fit::kGridSize; ++i)
+            {
+                const double f = fit::gridFrequency (i);
+                const float db = static_cast<float> (overlay.spectrum[static_cast<size_t> (i)] + overlayTilt * std::log2 (f / 1000.0));
+                const float y = plotH * (1.0f - juce::jlimit (0.0f, 1.0f, (db + analyzerRange) / analyzerRange));
+                if (i == 0) line.startNewSubPath (freqToX (f), y); else line.lineTo (freqToX (f), y);
+            }
+            g.setColour (overlay.colour.withAlpha (0.12f));
+            g.strokePath (line, juce::PathStrokeType (5.0f));
+            g.setColour (overlay.colour.withAlpha (0.85f));
+            g.strokePath (line, juce::PathStrokeType (1.2f));
+
+            const float stripY = plotH - 8.0f - 7.0f * static_cast<float> (o);
+            for (int i = 0; i + 1 < fit::kGridSize; ++i)
+            {
+                const double strength = overlay.collision[static_cast<size_t> (i)];
+                if (strength <= 0.0)
+                    continue;
+                const float x0 = freqToX (fit::gridFrequency (i)), x1 = freqToX (fit::gridFrequency (i + 1));
+                g.setColour (overlay.colour.withAlpha (static_cast<float> (0.25 + 0.65 * strength)));
+                g.fillRect (x0, stripY, x1 - x0 + 0.5f, 5.0f);
             }
         }
 

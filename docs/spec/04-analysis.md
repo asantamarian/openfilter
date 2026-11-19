@@ -60,6 +60,18 @@ Leaving the display or pressing Esc cancels.
 
 ## 2. Instance hub
 
+**Built** (`src/hub/InstanceHub`, `src/ui/InstancePanel`): the in-process registry
+(2.1), the panel's list with names, colours and mini spectra, per-instance overlays
+in the display, and the collision view (2.4). Each instance feeds a copy of its
+output to a small FIFO only while more than one instance is registered; the hub
+computes the spectra on the message thread at 10 Hz. Names and colours come from
+the host through `updateTrackProperties`, with "EQ n" and a palette colour as
+fallbacks. A silent instance is listed but not drawn.
+
+**Not built:** the cross-process fallback (2.2), opening another instance inline
+to edit it and its bypass toggle (2.3), and using another instance as the EQ match
+reference. Verified by the snapshot tool with two instances in one process.
+
 Purpose: show other instances' spectra, highlight masking, and edit other
 instances from one window.
 

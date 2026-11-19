@@ -5,6 +5,7 @@
 #include "Parameters.h"
 #include "dsp/Engine.h"
 #include "dsp/util/SpscFifo.h"
+#include "hub/InstanceHub.h"
 
 namespace of
 {
@@ -29,6 +30,7 @@ public:
     bool hasEditor() const override { return true; }
 
     const juce::String getName() const override { return "OpenFilter EQ"; }
+    void updateTrackProperties (const TrackProperties&) override;
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     double getTailLengthSeconds() const override { return 0.5; }
@@ -68,6 +70,14 @@ public:
 
     // Analyzer taps (mono sum), written by the audio thread only while an editor is open.
     SpscFifo preFifo, postFifo, scFifo;
+
+    // Instance hub: the other OpenFilter EQs in this process (docs/spec/04-analysis.md
+    // section 2). hubFifo carries this instance's output for the hub's spectrum.
+    SpscFifo hubFifo { 16384 };
+    std::atomic<bool> hubFeeding { false };
+    juce::String instanceName;          // the host's track name, when it tells us
+    juce::Colour instanceColour;        // the host's track colour, transparent if unknown
+    juce::SharedResourcePointer<InstanceHub> hub;
     std::atomic<bool> analyzerActive { false };
 
     juce::UndoManager undo;

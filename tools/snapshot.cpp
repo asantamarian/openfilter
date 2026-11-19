@@ -220,6 +220,90 @@ int main (int argc, char** argv)
         e->updateNow();
     }
 
+    // Instance hub: a second instance in this process, playing something else. Each must see
+    // the other, and collisions must be marked where the two overlap and nowhere else.
+    bool hubOk = false;
+    {
+        of::OpenFilterProcessor second;
+        second.prepareToPlay (48000.0, 512);
+        second.instanceName = "Bass";
+        float low = 0.0f;
+        juce::AudioBuffer<float> other (2, 512);
+        for (int block = 0; block < 120; ++block)
+        {
+            for (int i = 0; i < 512; ++i)
+            {
+                pink = 0.985f * pink + 0.06f * (random.nextFloat() * 2.0f - 1.0f);
+                buffer.setSample (0, i, pink);
+                buffer.setSample (1, i, pink);
+                low = 0.999f * low + 0.02f * (random.nextFloat() * 2.0f - 1.0f);   // mostly below 200 Hz
+                other.setSample (0, i, low);
+                other.setSample (1, i, low);
+            }
+            processor.processBlock (buffer, midi);
+            second.processBlock (other, midi);
+            if (block % 9 == 8)
+                processor.hub->refreshNow();
+        }
+        // Other processors from the checks above are still alive (and silent), so look for
+        // these two by identity rather than counting.
+        const auto entries = processor.hub->entries();
+        bool sawBoth = false, named = false, bothLive = false;
+        {
+            const of::InstanceHub::Entry* mine = nullptr;
+            const of::InstanceHub::Entry* bass = nullptr;
+            for (const auto& e : entries)
+            {
+                if (e.processor == &processor) mine = &e;
+                if (e.processor == &second)    bass = &e;
+            }
+            sawBoth = mine != nullptr && bass != nullptr;
+            named = sawBoth && bass->name == "Bass";
+            bothLive = sawBoth && mine->hasSignal && bass->hasSignal;
+            // The bass-heavy instance and the full-range one must collide in the lows and not
+            // in the top octaves, where the bass instance has nothing.
+            if (sawBoth)
+            {
+                const auto c = of::InstanceHub::collision (mine->spectrum, bass->spectrum);
+                double lows = 0.0, highs = 0.0;
+                for (int i = 0; i < of::fit::kGridSize; ++i)
+                    (of::fit::gridFrequency (i) < 300.0 ? lows : highs) += of::fit::gridFrequency (i) < 300.0 || of::fit::gridFrequency (i) > 4000.0 ? c[static_cast<size_t> (i)] : 0.0;
+                bothLive = bothLive && lows > 3.0 && highs < 0.5;
+                std::printf ("  collision strength summed: %.1f below 300 Hz, %.1f above 4 kHz\n", lows, highs);
+            }
+        }
+        const int countWithSecond = static_cast<int> (entries.size());
+
+        // The collision measure on its own: identical spectra collide everywhere they have
+        // level, spectra 20 dB apart nowhere, and silence never.
+        of::fit::Curve a {}, b {}, quiet {};
+        a.fill (-30.0);  b.fill (-50.0);  quiet.fill (-140.0);
+        const auto same = of::InstanceHub::collision (a, a), apart = of::InstanceHub::collision (a, b), none = of::InstanceHub::collision (quiet, quiet);
+        const bool measureOk = same[100] > 0.99 && apart[100] == 0.0 && none[100] == 0.0;
+
+        hubOk = sawBoth && named && bothLive && measureOk;
+        std::printf ("instance hub: %s (%d instances in the process, both live and colliding in the lows only: %s)\n", hubOk ? "ok" : "WRONG", countWithSecond, bothLive ? "yes" : "no");
+
+        if (auto* e = dynamic_cast<of::OpenFilterEditor*> (editor.get()))
+        {
+            e->showInstancePanel (true);
+            e->updateNow();
+            const auto hubFile = out.getSiblingFile (out.getFileNameWithoutExtension() + "-instances.png");
+            hubFile.deleteFile();
+            juce::FileOutputStream hubStream (hubFile);
+            if (hubStream.openedOk())
+                juce::PNGImageFormat().writeImageToStream (editor->createComponentSnapshot (editor->getLocalBounds(), false, 1.0f), hubStream);
+            e->showInstancePanel (false);
+            e->responseDisplay().setOverlays ({});
+            e->updateNow();
+        }
+    }
+    // The second instance left the hub with its destructor.
+    bool stillListed = false;
+    for (const auto& e : processor.hub->entries())
+        stillListed = stillListed || e.name == "Bass";
+    hubOk = hubOk && ! stillListed;
+
     const auto image = editor->createComponentSnapshot (editor->getLocalBounds(), false, 1.0f);
     out.deleteFile();
     juce::FileOutputStream stream (out);
@@ -244,5 +328,5 @@ int main (int argc, char** argv)
         && juce::PNGImageFormat().writeImageToStream (editor->createComponentSnapshot (editor->getLocalBounds(), false, 1.0f), tableStream);
     std::printf ("%s %s\n", tableWritten ? "wrote" : "FAILED to write", tableFile.getFullPathName().toRawUTF8());
 
-    return written && tableWritten && roundTrip && presetOk && parseOk && slotsOk && factoryOk && matchOk ? 0 : 1;
+    return written && tableWritten && roundTrip && presetOk && parseOk && slotsOk && factoryOk && matchOk && hubOk ? 0 : 1;
 }

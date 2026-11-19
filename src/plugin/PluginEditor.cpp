@@ -28,7 +28,7 @@ void applyTheme (juce::LookAndFeel_V4& look)
 } // namespace
 
 OpenFilterEditor::OpenFilterEditor (OpenFilterProcessor& p)
-    : AudioProcessorEditor (p), processor (p), display (p), dock (p), table (p), matchPanel (p, display),
+    : AudioProcessorEditor (p), processor (p), display (p), dock (p), table (p), matchPanel (p, display), instancePanel (p, display),
       bypassAttachment (p.apvts, "bypass", bypassButton),
       deltaAttachment (p.apvts, "delta", deltaButton)
 {
@@ -99,6 +99,8 @@ OpenFilterEditor::OpenFilterEditor (OpenFilterProcessor& p)
         addAndMakeVisible (b);
     }
 
+    addChildComponent (instancePanel);
+    instancePanel.onClose = [this] { instancePanel.setVisible (false); };
     addChildComponent (matchPanel);
     matchPanel.onClose = [this] { matchPanel.setVisible (false); };
     addChildComponent (table);
@@ -137,6 +139,7 @@ void OpenFilterEditor::resized()
     outputColumn = area.removeFromRight (kOutputWidth);
     display.setBounds (area);
     matchPanel.setBounds (area.withTrimmedLeft (16).withTrimmedRight (60).withY (area.getY() + 12).withHeight (94).withWidth (juce::jmin (760, area.getWidth() - 76)));
+    instancePanel.setBounds (area.getRight() - 60 - 300, area.getY() + 12, 300, juce::jmin (area.getHeight() - 60, 40 + 6 * 58 + 8));
     // The band table covers the lower part of the display when open.
     table.setBounds (area.withTop (area.getBottom() - juce::jmin (area.getHeight() * 45 / 100, 26 * 12)));
 
@@ -337,6 +340,7 @@ void OpenFilterEditor::showViewMenu()
     juce::PopupMenu sketch;
     for (int n : { 3, 5, 8, 12 })
         sketch.addItem (8000 + n, "Draw a curve, fit " + juce::String (n) + " bands");
+    menu.addItem (6, "Instances (" + juce::String (processor.hub->count() - 1) + " other)...", true, instancePanel.isVisible());
     menu.addItem (5, "EQ match...", true, matchPanel.isVisible());
     menu.addSubMenu ("Sketch", sketch);
     menu.addSeparator();
@@ -373,6 +377,12 @@ void OpenFilterEditor::showViewMenu()
         else if (result == 2) proc.analyzerOn = ! proc.analyzerOn;
         else if (result == 3) proc.pianoStrip = ! proc.pianoStrip;
         else if (result == 5) safe->matchPanel.setVisible (! safe->matchPanel.isVisible());
+        else if (result == 6)
+        {
+            safe->instancePanel.setVisible (! safe->instancePanel.isVisible());
+            if (! safe->instancePanel.isVisible())
+                safe->display.setOverlays ({});
+        }
         else if (result >= 8000) safe->display.beginSketch (result - 8000);
         else if (result == 4) proc.analyzerFrozen = ! proc.analyzerFrozen;
         else if (result >= 7200) proc.analyzerRange = result - 7200;
@@ -502,6 +512,8 @@ void OpenFilterEditor::timerCallback()
         table.refresh();
     if (matchPanel.isVisible())
         matchPanel.refresh();
+    if (instancePanel.isVisible())
+        instancePanel.refresh();
     for (int i = 0; i < OpenFilterProcessor::kNumSlots; ++i)
         slotButtons[static_cast<size_t> (i)].setToggleState (i == processor.activeSlot(), juce::dontSendNotification);
     undoButton.setEnabled (processor.undo.canUndo());

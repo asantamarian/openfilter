@@ -32,7 +32,9 @@ Milestone M1 (static EQ, zero latency) is built and M2 (full UI) is under way. B
 | Nine factory presets; analyzer speed, tilt, range and freeze; piano strip; number keys to select bands; copy, paste and duplicate bands | Built |
 | Paged dock, multi-band selection, spectrogram, full screen, embedded fonts, a dock control for the free detector filter | Not yet |
 | EQ match (reference from the sidechain or an audio file) and curve sketching, on a shared curve fitter; sidechain trace in the analyzer | Built (M6) |
-| Instance hub and collision view (M6); CLAP, accessibility pass, MIDI learn, themes, installers (M7) | Not yet |
+| Instance hub: other instances in the same process drawn over the display, with collision strips | Built (M6) |
+| Editing another instance from this window; instances in other processes; matching to another instance | Not yet |
+| CLAP, accessibility pass, MIDI learn, themes, installers (M7) | Not yet |
 
 Known gaps:
 
