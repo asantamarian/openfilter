@@ -50,7 +50,7 @@ void Dial::paint (juce::Graphics& g)
 
         g.setColour (theme::text.withMultipliedAlpha (alpha));
         g.setFont (theme::mono (12.0f));
-        g.drawText (param->getCurrentValueAsText(), valueArea, juce::Justification::centred, false);
+        g.drawText (textOverride ? textOverride() : param->getCurrentValueAsText(), valueArea, juce::Justification::centred, false);
     }
 
     g.setColour (theme::textMuted.withMultipliedAlpha (alpha));

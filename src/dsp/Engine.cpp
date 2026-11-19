@@ -47,6 +47,9 @@ void BandProcessor::reset() noexcept
     wasAudible = false;
     switching = false;
     fresh = true;
+    detecting = false;
+    appliedDyn = 0.0;
+    detector.reset();
 }
 
 void BandProcessor::update (const BandParams& target, bool mono) noexcept
@@ -64,6 +67,8 @@ void BandProcessor::update (const BandParams& target, bool mono) noexcept
     {
         for (auto& f : filters)
             f.fadeTo (false, fade);
+        detecting = false;
+        appliedDyn = 0.0;
         switching = false;
         wasAudible = false;
         last = target;
@@ -112,13 +117,29 @@ void BandProcessor::update (const BandParams& target, bool mono) noexcept
         step (logQ, tq, 1.0e-6);
     }
 
+    // Dynamics: the detector's verdict for this control block is added to the static gain.
+    const bool wasDetecting = detecting;
+    detecting = target.dynamic();
+    double dynNow = 0.0;
+    if (detecting)
+    {
+        if (! wasDetecting)
+            detector.reset();
+        if (! wasDetecting || redesign || target.shape != last.shape)
+            detector.setFilter (target.shape, std::exp (logFreq), std::exp (logQ));
+        dynNow = detector.update (target.dyn, target.dyn.rangeDb);
+    }
+    if (std::abs (dynNow - appliedDyn) > 1.0e-4)
+        redesign = true;
+
     const bool routing = starting || target.place != last.place || mono != lastMono;
 
     if (redesign || routing)
     {
+        appliedDyn = dynNow;
         BandParams p = target;
         p.freq = std::exp (logFreq);
-        p.gainDb = gainDb;
+        p.gainDb = std::clamp (gainDb + dynNow, -60.0, 60.0);
         p.q = std::exp (logQ);
         const auto design = designBand (p, fs);
         std::array<SvfCoeffs, kMaxSections> coeffs;
@@ -197,7 +218,10 @@ void Engine::configure (int mode) noexcept
     }
     delayPos = 0;
     for (auto& b : bands)
+    {
         b.prepare (fs * factor, controlLen * factor);   // also resets the band
+        b.prepareDetector (fs, controlLen);             // detectors always run at the host rate
+    }
 }
 
 void Engine::reset() noexcept
@@ -238,8 +262,12 @@ void Engine::updateTargets (const ParamSnapshot& params, bool mono) noexcept
     {
         BandParams p = params.bands[static_cast<size_t> (i)];
         if (hasGain (p.shape))
+        {
             p.gainDb = std::clamp (p.gainDb * params.gainScale, -60.0, 60.0);
+            p.dyn.rangeDb = std::clamp (p.dyn.rangeDb * params.gainScale, -60.0, 60.0);
+        }
         bands[static_cast<size_t> (i)].update (p, mono);
+        dynGains[static_cast<size_t> (i)].store (static_cast<float> (bands[static_cast<size_t> (i)].dynamicGainDb()), std::memory_order_relaxed);
     }
 
     const double g = std::pow (10.0, params.outGainDb / 20.0) * (params.invert ? -1.0 : 1.0);
@@ -338,6 +366,11 @@ void Engine::processSegment (double* const* io, int numChannels, int offset, int
     double* dryL = dry[0].data() + offset;
     double* dryR = dry[1].data() + offset;
     const int lat = latency.load (std::memory_order_relaxed);
+
+    // Dynamic bands listen to the input, before any band has touched it.
+    for (auto& b : bands)
+        if (b.wantsDetection())
+            b.detect (left, right, n);
 
     // Dry signal, delayed by the latency: for bypass, delta, and the idle path.
     if (lat > 0)

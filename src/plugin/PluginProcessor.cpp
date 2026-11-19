@@ -15,7 +15,9 @@ OpenFilterProcessor::OpenFilterProcessor()
     {
         const auto id = [b] (const char* suffix) { return params::bandId (b, suffix); };
         bandPtrs[static_cast<size_t> (b)] = { raw (id ("used")), raw (id ("on")), raw (id ("shape")), raw (id ("slope")),
-                                              raw (id ("freq")), raw (id ("gain")), raw (id ("q")), raw (id ("place")) };
+                                              raw (id ("freq")), raw (id ("gain")), raw (id ("q")), raw (id ("place")),
+                                              raw (id ("dyn")), raw (id ("range")), raw (id ("thr")), raw (id ("athr")), raw (id ("ratio")),
+                                              raw (id ("knee")), raw (id ("atk")), raw (id ("rel")), raw (id ("trig")) };
     }
     gainScalePtr = raw ("gain_scale");
     outGainPtr = raw ("out_gain");
@@ -77,6 +79,16 @@ void OpenFilterProcessor::readSnapshot (ParamSnapshot& s) const noexcept
         out.freq = f (p.freq);
         out.gainDb = f (p.gain);
         out.q = f (p.q);
+        // Dynamics mode 1 is Dynamic; 2 (Spectral) is not built yet and behaves as Off.
+        out.dyn.on = juce::roundToInt (f (p.dyn)) == 1;
+        out.dyn.rangeDb = f (p.range);
+        out.dyn.thresholdDb = f (p.thr);
+        out.dyn.autoThreshold = f (p.athr) > 0.5f;
+        out.dyn.ratio = f (p.ratio);
+        out.dyn.kneeDb = f (p.knee);
+        out.dyn.attackMs = f (p.atk);
+        out.dyn.releaseMs = f (p.rel);
+        out.dyn.below = f (p.trig) > 0.5f;
     }
     s.phaseMode = juce::roundToInt (f (phaseModePtr));
     s.gainScale = f (gainScalePtr) * 0.01;
@@ -200,8 +212,8 @@ void OpenFilterProcessor::setStateInformation (const void* data, int size)
     const auto ui = root.getChildWithName ("Ui");
     if (ui.isValid())
     {
-        editorWidth = juce::jlimit (800, 8000, static_cast<int> (ui.getProperty ("width", 1280)));
-        editorHeight = juce::jlimit (500, 8000, static_cast<int> (ui.getProperty ("height", 800)));
+        editorWidth = juce::jlimit (1180, 8000, static_cast<int> (ui.getProperty ("width", 1280)));
+        editorHeight = juce::jlimit (560, 8000, static_cast<int> (ui.getProperty ("height", 800)));
         presetName = ui.getProperty ("preset", "").toString();
         uiScale = juce::jlimit (0.5f, 2.0f, static_cast<float> (ui.getProperty ("scale", 1.0)));
         const double range = ui.getProperty ("displayRange", 12.0);
@@ -326,7 +338,8 @@ void OpenFilterProcessor::removeBand (int band)
     undo.beginNewTransaction ("Delete band");
     setBandValue (band, "used", 0.0f);
     // Reset the slot so a later band (and its automation lanes) starts clean.
-    for (const char* suffix : { "on", "shape", "slope", "freq", "gain", "q", "place" })
+    for (const char* suffix : { "on", "shape", "slope", "freq", "gain", "q", "place", "lin", "dyn", "range", "thr", "athr",
+                                "ratio", "knee", "atk", "rel", "trig", "sc", "scfree", "scfreq", "scq", "smode", "sres" })
         if (auto* p = bandParam (band, suffix))
             p->setValueNotifyingHost (p->getDefaultValue());
 }

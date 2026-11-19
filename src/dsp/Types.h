@@ -33,6 +33,27 @@ constexpr bool hasGain (Shape s) noexcept
 
 constexpr bool isCut (Shape s) noexcept { return s == Shape::LowCut || s == Shape::HighCut; }
 
+constexpr bool canBeDynamic (Shape s) noexcept
+{
+    return s == Shape::Bell || s == Shape::LowShelf || s == Shape::HighShelf || s == Shape::TiltShelf;
+}
+
+/** Dynamics settings of a band (docs/spec/02-parameters.md). */
+struct DynParams
+{
+    bool on = false;
+    double rangeDb = 0.0;        // gain added at full detection; negative compresses the band
+    double thresholdDb = -30.0;  // dBFS, or an offset around the program level when auto
+    bool autoThreshold = true;
+    double ratio = 3.0;
+    double kneeDb = 6.0;
+    double attackMs = 10.0;
+    double releaseMs = 120.0;
+    bool below = false;          // act when the level is under the threshold
+
+    bool operator== (const DynParams&) const = default;
+};
+
 /** Plain band settings. gainDb is the effective gain, after gain scale. */
 struct BandParams
 {
@@ -44,6 +65,13 @@ struct BandParams
     double freq = 1000.0;
     double gainDb = 0.0;
     double q = 1.0;
+    DynParams dyn {};
+
+    /** True when dynamics are switched on and can do something for this shape. */
+    bool dynamic() const noexcept
+    {
+        return used && on && dyn.on && canBeDynamic (shape) && (dyn.rangeDb > 1.0e-6 || dyn.rangeDb < -1.0e-6);
+    }
 
     /** True when the band changes the signal at all. */
     bool audible() const noexcept
@@ -51,7 +79,7 @@ struct BandParams
         if (! used || ! on)
             return false;
         if (hasGain (shape))
-            return gainDb > 1.0e-6 || gainDb < -1.0e-6;
+            return gainDb > 1.0e-6 || gainDb < -1.0e-6 || dynamic();
         return true;
     }
 };

@@ -335,7 +335,7 @@ void testPlugin (juce::AudioPluginFormatManager& formats, const juce::String& pa
         for (int i = 0; i < 10; ++i)
             if (std::unique_ptr<juce::AudioProcessorEditor> editor { plugin->createEditor() })
             {
-                check (editor->getWidth() >= 800 && editor->getHeight() >= 500, "editor size");
+                check (editor->getWidth() >= 1180 && editor->getHeight() >= 560, "editor size");
                 ++opened;
             }
         check (opened == 10, "editor opens and closes 10 times");

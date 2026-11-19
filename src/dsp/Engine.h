@@ -1,5 +1,6 @@
 #pragma once
 
+#include "dynamics/Detector.h"
 #include "kernel/ChannelFilter.h"
 #include "util/Halfband.h"
 
@@ -22,6 +23,12 @@ public:
     bool laneAActive() const noexcept { return filters[0].active() || filters[1].active(); }
     bool laneBActive() const noexcept { return filters[2].active() || filters[3].active(); }
 
+    /** Dynamic bands: feed the detector with the plugin input at the host rate. */
+    bool wantsDetection() const noexcept { return detecting; }
+    void detect (const double* left, const double* right, int n) noexcept { detector.process (left, right, n, last.place); }
+    double dynamicGainDb() const noexcept { return detecting ? detector.current() : 0.0; }
+    void prepareDetector (double hostRate, int hostControlBlock) noexcept { detector.prepare (hostRate, hostControlBlock); }
+
     void processLaneA (double* left, double* right, int n) noexcept;
     void processLaneB (double* mid, double* side, int n) noexcept;
 
@@ -38,6 +45,9 @@ private:
     double logFreq = 0.0, gainDb = 0.0, logQ = 0.0;   // smoothed
     int fadeLen = 256;           // 5 ms, a whole number of control blocks
     bool switching = false;      // faded out, waiting to come back with a new shape
+    Detector detector;
+    bool detecting = false;
+    double appliedDyn = 0.0;     // dynamic gain used in the current design
 };
 
 /** The whole audio path of milestone M1: IIR lanes, output section, bypass and delta.
@@ -59,6 +69,9 @@ public:
     static int latencyFor (int phaseMode, double sampleRate) noexcept;
     static int oversamplingFor (int phaseMode, double sampleRate) noexcept;
     int controlBlockSize() const noexcept { return controlLen; }
+
+    /** Current dynamic gain of a band in dB, for the display. */
+    float dynamicGainDb (int band) const noexcept { return dynGains[static_cast<size_t> (band)].load (std::memory_order_relaxed); }
 
     /** Peak since the last call (linear). Called by the UI. */
     float takePeak (int channel) noexcept { return peaks[static_cast<size_t> (channel & 1)].exchange (0.0f, std::memory_order_relaxed); }
@@ -101,5 +114,6 @@ private:
     double deltaMix = 0.0, deltaTarget = 0.0;
 
     std::array<std::atomic<float>, 2> peaks {};
+    std::array<std::atomic<float>, kMaxBands> dynGains {};
 };
 } // namespace of

@@ -297,6 +297,13 @@ time and the detector is not.
 
 `sc_listen` routes the selected band's filtered detector signal to the output.
 
+**Built so far:** everything above with the internal detector (the plugin input).
+The detector filter is a plain 12 dB/oct band-pass, low-pass or high-pass; the
+free detector filter, the external sidechain, lookahead and sidechain listen are
+not built yet. In Natural mode the detector runs at the host rate on the undelayed
+input, which gives it about 0.8 ms of look-ahead at 44.1/48 kHz. Verified by
+`tests/unit/dynamics_tests.cpp`.
+
 ## 8. Spectral bands
 
 One shared STFT lane serves all spectral bands of a channel.

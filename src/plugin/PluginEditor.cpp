@@ -87,7 +87,8 @@ OpenFilterEditor::OpenFilterEditor (OpenFilterProcessor& p)
     // Read the saved size first: setting the limits resizes the editor, which stores a size.
     const int width = p.editorWidth, height = p.editorHeight;
     setResizable (true, true);
-    setResizeLimits (800, 500, 8000, 8000);
+    // The dock needs about 1180 px for its eight dials; narrower layouts need paging (later).
+    setResizeLimits (1180, 560, 8000, 8000);
     setSize (width, height);
     startTimerHz (30);
 }

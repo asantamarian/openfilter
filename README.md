@@ -21,7 +21,9 @@ Milestone M1 (static EQ, zero latency) is built and M2 (full UI) is under way. B
 | Spectrum analyzer (input and output), JSON presets, typed values with note names | Built (first part of M2) |
 | Natural phase mode: filters at 4x, accurate to 20 kHz, 76 samples of latency at 44.1/48 kHz | Built (brought forward from M4) |
 | Band table with editable cells, A/B/C/D slots, View menu (interface size, display range, analyzer on/off, undo history) | Built (M2) |
-| Dynamics, linear and mixed phase, spectral bands, auto gain, instance linking, EQ match, CLAP, accessibility pass, M3 to M7 | Not yet |
+| Dynamic bands with the internal detector: threshold (manual or auto), range, ratio, knee, attack, release, trigger above or below (M3) | Built |
+| External sidechain, band solo, lookahead (rest of M3) | Not yet |
+| Linear and mixed phase, spectral bands, auto gain, instance linking, EQ match, CLAP, accessibility pass (M4 to M7) | Not yet |
 
 Known gaps:
 

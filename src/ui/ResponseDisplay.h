@@ -56,7 +56,8 @@ private:
     int selected = -1, hovered = -1, dragging = -1;
     bool dragHasGain = false;
     juce::Point<float> dragOffset;
-    juce::Path compositePath, selectedPath, selectedFill;
+    juce::Path compositePath, selectedPath, selectedFill, rangePath;
+    std::array<float, kMaxBands> liveDyn {};
 
     SpectrumAnalyzer preAnalyzer, postAnalyzer;
     juce::Path preFill, postLine;

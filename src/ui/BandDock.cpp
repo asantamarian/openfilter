@@ -4,7 +4,8 @@ namespace of
 {
 namespace
 {
-constexpr int kChipW = 38, kChipH = 28, kChipGap = 6, kChipsPerRow = 8;
+// 11 chips per row and 3 rows hold all 32 bands.
+constexpr int kChipW = 26, kChipH = 22, kChipGap = 3, kChipsPerRow = 11;
 }
 
 BandDock::BandDock (OpenFilterProcessor& p) : processor (p)
@@ -18,9 +19,32 @@ BandDock::BandDock (OpenFilterProcessor& p) : processor (p)
     for (auto* c : { &shapeBox, &slopeBox, &placeBox })
         addAndMakeVisible (*c);
 
+    // Spectral is in the parameter already but not built yet.
+    dynBox.addItemList ({ "Static", "Dynamic", "Spectral (not yet)" }, 1);
+    dynBox.setItemEnabled (3, false);
+    dynBox.setTitle ("Dynamics mode");
+    dynBox.setTooltip ("Dynamic: the band's gain moves by up to Range when the level around the band passes the threshold.");
+    addAndMakeVisible (dynBox);
+
+    autoButton.setClickingTogglesState (true);
+    autoButton.setTooltip ("Auto threshold follows the long-term level around the band, so the band reacts the same on quiet and loud material. The Thresh dial then sets how far above or below that level it starts.");
+    addAndMakeVisible (autoButton);
+
     gainDial.setBipolar (true);
-    for (auto* d : { &freqDial, &gainDial, &qDial })
+    rangeDial.setBipolar (true);
+    for (auto* d : { &freqDial, &gainDial, &qDial, &thrDial, &rangeDial, &ratioDial, &atkDial, &relDial })
         addAndMakeVisible (*d);
+
+    thrDial.textOverride = [this]
+    {
+        auto* p = band >= 0 ? processor.bandParam (band, "thr") : nullptr;
+        if (p == nullptr)
+            return juce::String();
+        const float thr = p->convertFrom0to1 (p->getValue());
+        if (band >= 0 && current.dyn.autoThreshold)   // read as an offset around the program level
+            return params::formatGain ((thr + 90.0f) / 90.0f * 60.0f - 30.0f) + " rel";
+        return p->getCurrentValueAsText();
+    };
 
     bypassButton.setClickingTogglesState (false);
     bypassButton.onClick = [this]
@@ -47,6 +71,8 @@ void BandDock::setBand (int newBand)
     shapeAttachment.reset();
     slopeAttachment.reset();
     placeAttachment.reset();
+    dynAttachment.reset();
+    autoAttachment.reset();
 
     const bool has = band >= 0;
     if (has)
@@ -54,15 +80,23 @@ void BandDock::setBand (int newBand)
         shapeAttachment = std::make_unique<ComboAttachment> (processor.apvts, params::bandId (band, "shape"), shapeBox);
         slopeAttachment = std::make_unique<ComboAttachment> (processor.apvts, params::bandId (band, "slope"), slopeBox);
         placeAttachment = std::make_unique<ComboAttachment> (processor.apvts, params::bandId (band, "place"), placeBox);
+        dynAttachment = std::make_unique<ComboAttachment> (processor.apvts, params::bandId (band, "dyn"), dynBox);
+        autoAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (processor.apvts, params::bandId (band, "athr"), autoButton);
     }
+    const auto bind = [&] (Dial& d, const char* suffix) { d.attach (has ? processor.bandParam (band, suffix) : nullptr, &processor.undo); };
+    bind (thrDial, "thr");
+    bind (rangeDial, "range");
+    bind (ratioDial, "ratio");
+    bind (atkDial, "atk");
+    bind (relDial, "rel");
     freqDial.attach (has ? processor.bandParam (band, "freq") : nullptr, &processor.undo);
     gainDial.attach (has ? processor.bandParam (band, "gain") : nullptr, &processor.undo);
     qDial.attach (has ? processor.bandParam (band, "q") : nullptr, &processor.undo);
 
     const auto colour = has ? theme::band (band) : theme::lineStrong;
-    for (auto* d : { &freqDial, &gainDial, &qDial })
+    for (auto* d : { &freqDial, &gainDial, &qDial, &thrDial, &rangeDial, &ratioDial, &atkDial, &relDial })
         d->setArcColour (colour);
-    for (auto* c : std::initializer_list<juce::Component*> { &shapeBox, &slopeBox, &placeBox, &bypassButton, &deleteButton })
+    for (auto* c : std::initializer_list<juce::Component*> { &shapeBox, &slopeBox, &placeBox, &dynBox, &autoButton, &bypassButton, &deleteButton })
         c->setEnabled (has);
 
     refresh();
@@ -82,9 +116,24 @@ void BandDock::refresh()
     if (band >= 0)
     {
         const auto b = processor.readBand (band);
-        if (b.shape != current.shape || b.on != current.on || b.slope != current.slope)
+        if (b.shape != current.shape || b.on != current.on || b.slope != current.slope || ! (b.dyn == current.dyn))
             changed = true;
         current = b;
+
+        // Dynamics controls only apply to shapes that can be dynamic, and only when switched on.
+        const bool canDyn = canBeDynamic (b.shape);
+        const bool dynOn = canDyn && b.dyn.on;
+        dynBox.setEnabled (canDyn);
+        autoButton.setEnabled (dynOn);
+        for (auto* d : { &thrDial, &rangeDial, &ratioDial, &atkDial, &relDial })
+            d->setDimmed (! dynOn);
+
+        const float live = dynOn ? processor.dynamicGainDb (band) : 0.0f;
+        if (std::abs (live - liveDyn) > 0.05f)
+        {
+            liveDyn = live;
+            repaint (dynArea.withHeight (16));
+        }
         gainDial.setDimmed (! hasGain (b.shape));
         qDial.setDimmed (b.shape == Shape::FlatTilt || b.slope == Slope::Brickwall
                          || (b.slope == Slope::S6 && (isCut (b.shape) || b.shape == Shape::LowShelf || b.shape == Shape::HighShelf
@@ -120,14 +169,12 @@ void BandDock::paint (juce::Graphics& g)
         const auto r = chipBounds (index++).toFloat();
         const auto c = theme::band (i);
         g.setColour (i == band ? theme::raised : theme::panel);
-        g.fillRoundedRectangle (r, 7.0f);
+        g.fillRoundedRectangle (r, 5.0f);
         g.setColour (i == band ? c : theme::line);
-        g.drawRoundedRectangle (r.reduced (0.5f), 7.0f, 1.0f);
-        g.setColour (c);
-        g.fillEllipse (r.getX() + 7.0f, r.getCentreY() - 3.5f, 7.0f, 7.0f);
-        g.setColour (theme::text);
+        g.drawRoundedRectangle (r.reduced (0.5f), 5.0f, 1.0f);
+        g.setColour (i == band ? c : c.withAlpha (0.85f));
         g.setFont (theme::mono (11.0f));
-        g.drawText (juce::String (i + 1), r.withTrimmedLeft (16.0f), juce::Justification::centred, false);
+        g.drawText (juce::String (i + 1), r, juce::Justification::centred, false);
     }
     theme::drawLabel (g, "Bands  " + juce::String (count) + "/" + juce::String (kMaxBands), chipsArea.withHeight (14));
     if (count == 0)
@@ -138,9 +185,18 @@ void BandDock::paint (juce::Graphics& g)
     }
 
     theme::drawLabel (g, "Shape", shapeArea.withHeight (14));
-    theme::drawLabel (g, "Slope", juce::Rectangle<int> (slopeBox.getX(), slopeBox.getY() - 20, 100, 14));
-    theme::drawLabel (g, "Channel", juce::Rectangle<int> (placeBox.getX(), placeBox.getY() - 20, 100, 14));
     theme::drawLabel (g, "Filter", dialsArea.withHeight (14));
+    theme::drawLabel (g, "Dynamics", dynArea.withHeight (14));
+    g.setColour (theme::line);
+    g.fillRect (dynArea.getX() - 13, 14, 1, getHeight() - 28);
+
+    // Live dynamic gain of the selected band.
+    if (band >= 0 && current.dyn.on && canBeDynamic (current.shape))
+    {
+        g.setColour (theme::band (band));
+        g.setFont (theme::mono (11.0f));
+        g.drawText (params::formatGain (liveDyn), dynArea.withHeight (14), juce::Justification::centredRight, false);
+    }
 
     if (band >= 0)
     {
@@ -156,7 +212,7 @@ void BandDock::resized()
 
     chipsArea = area.removeFromLeft (kChipsPerRow * (kChipW + kChipGap) - kChipGap);
     area.removeFromLeft (26);
-    shapeArea = area.removeFromLeft (300);
+    shapeArea = area.removeFromLeft (190);
     area.removeFromLeft (26);
     dialsArea = area;
 
@@ -165,19 +221,36 @@ void BandDock::resized()
     buttons.removeFromLeft (6);
     deleteButton.setBounds (buttons.removeFromLeft (84));
 
+    // Shape, slope and channel stacked.
     auto s = shapeArea;
     s.removeFromTop (22);
     shapeBox.setBounds (s.removeFromTop (30));
-    auto lower = shapeArea.withTop (shapeArea.getBottom() - 30);
-    slopeBox.setBounds (lower.removeFromLeft (144));
-    lower.removeFromLeft (12);
-    placeBox.setBounds (lower);
+    s.removeFromTop (8);
+    slopeBox.setBounds (s.removeFromTop (30));
+    s.removeFromTop (8);
+    placeBox.setBounds (s.removeFromTop (30));
 
+    // Filter dials on the left, dynamics on the right; dials shrink a little when space is tight.
+    const int dialW = juce::jlimit (54, 92, (dialsArea.getWidth() - 24 - 96 - 8 - 16) / 8);
     auto d = dialsArea.withTrimmedTop (20);
     for (auto* dial : { &freqDial, &gainDial, &qDial })
     {
-        dial->setBounds (d.removeFromLeft (96));
-        d.removeFromLeft (4);
+        dial->setBounds (d.removeFromLeft (dialW));
+        d.removeFromLeft (2);
+    }
+    d.removeFromLeft (24);
+    dynArea = d.withTop (dialsArea.getY());
+    dialsArea.setRight (dynArea.getX() - 26);
+
+    auto modeColumn = d.removeFromLeft (96);
+    dynBox.setBounds (modeColumn.removeFromTop (30));
+    modeColumn.removeFromTop (10);
+    autoButton.setBounds (modeColumn.removeFromTop (28).withWidth (64));
+    d.removeFromLeft (8);
+    for (auto* dial : { &thrDial, &rangeDial, &ratioDial, &atkDial, &relDial })
+    {
+        dial->setBounds (d.removeFromLeft (dialW));
+        d.removeFromLeft (2);
     }
 }
 

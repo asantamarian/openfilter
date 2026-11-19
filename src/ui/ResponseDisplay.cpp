@@ -13,7 +13,7 @@ constexpr int kAxisHeight = 22;
 bool sameBand (const BandParams& a, const BandParams& b)
 {
     return a.used == b.used && a.on == b.on && a.shape == b.shape && a.slope == b.slope && a.place == b.place
-        && a.freq == b.freq && a.gainDb == b.gainDb && a.q == b.q;
+        && a.freq == b.freq && a.gainDb == b.gainDb && a.q == b.q && a.dyn == b.dyn;
 }
 } // namespace
 
@@ -106,6 +106,17 @@ void ResponseDisplay::refresh()
         rebuildCurves();
         repaint();
     }
+
+    // Live dynamic gain of each band.
+    bool dynMoved = false;
+    for (int i = 0; i < kMaxBands; ++i)
+    {
+        const float d = bands[static_cast<size_t> (i)].dynamic() ? processor.dynamicGainDb (i) : 0.0f;
+        dynMoved = dynMoved || std::abs (d - liveDyn[static_cast<size_t> (i)]) > 0.05f;
+        liveDyn[static_cast<size_t> (i)] = d;
+    }
+    if (dynMoved)
+        repaint();
 
     // Analyzer: pull what the audio thread queued and redraw while anything is showing.
     const auto now = juce::Time::getMillisecondCounter();
@@ -206,6 +217,7 @@ void ResponseDisplay::rebuildCurves()
     compositePath.clear();
     selectedPath.clear();
     selectedFill.clear();
+    rangePath.clear();
     const int w = getWidth();
     if (w <= 0)
         return;
@@ -226,6 +238,16 @@ void ResponseDisplay::rebuildCurves()
 
     const float zeroY = dbToY (0.0);
     const bool hasSelection = selected >= 0 && bands[static_cast<size_t> (selected)].used;
+
+    // A dynamic band also shows where it ends up at full detection.
+    Prototype rangeProto;
+    const bool showRange = hasSelection && bands[static_cast<size_t> (selected)].dynamic();
+    if (showRange)
+    {
+        auto b = bands[static_cast<size_t> (selected)];
+        b.gainDb = (b.gainDb + b.dyn.rangeDb) * scale;
+        rangeProto = makePrototype (b);
+    }
     if (hasSelection)
         selectedFill.startNewSubPath (0.0f, zeroY);
 
@@ -245,6 +267,11 @@ void ResponseDisplay::rebuildCurves()
             const float sy = dbToY (protos[static_cast<size_t> (selected)].magnitudeDb (f));
             if (x == 0) selectedPath.startNewSubPath (0.0f, sy); else selectedPath.lineTo (static_cast<float> (x), sy);
             selectedFill.lineTo (static_cast<float> (x), sy);
+        }
+        if (showRange)
+        {
+            const float ry = dbToY (rangeProto.magnitudeDb (f));
+            if (x == 0) rangePath.startNewSubPath (0.0f, ry); else rangePath.lineTo (static_cast<float> (x), ry);
         }
     }
     if (hasSelection)
@@ -319,6 +346,14 @@ void ResponseDisplay::paint (juce::Graphics& g)
             g.setColour (c.withAlpha (0.18f));
             g.fillPath (selectedFill);
             theme::strokeGlow (g, selectedPath, c, 1.4f, 0.8f);
+            if (! rangePath.isEmpty())
+            {
+                juce::Path dashed;
+                const float dashes[] = { 3.0f, 5.0f };
+                juce::PathStrokeType (1.3f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded).createDashedStroke (dashed, rangePath, dashes, 2);
+                g.setColour (c.withAlpha (0.85f));
+                g.fillPath (dashed);
+            }
         }
 
         // Composite curve: a white-hot core inside an accent halo.
@@ -342,6 +377,17 @@ void ResponseDisplay::paint (juce::Graphics& g)
         const auto p = nodePosition (b);
         const auto c = theme::band (i);
         const auto circle = juce::Rectangle<float> (2.0f * kNodeRadius, 2.0f * kNodeRadius).withCentre (p);
+
+        // A dynamic band shows its live gain as a marker on a stem from the node.
+        if (b.dynamic())
+        {
+            const float liveY = dbToY ((b.gainDb + liveDyn[static_cast<size_t> (i)]) * scale);
+            g.setColour (c.withAlpha (0.7f));
+            g.fillRect (p.x - 0.75f, juce::jmin (p.y, liveY), 1.5f, std::abs (liveY - p.y));
+            theme::fillGlowEllipse (g, juce::Rectangle<float> (8.0f, 8.0f).withCentre ({ p.x, liveY }), c, 0.9f);
+            g.setColour (c.withAlpha (0.6f));
+            g.drawEllipse (circle.expanded (6.5f), 1.0f);   // second ring marks the band as dynamic
+        }
 
         if (i == selected)
         {

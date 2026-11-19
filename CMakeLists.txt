@@ -112,7 +112,8 @@ if(OF_BUILD_TESTS)
     tests/unit/design_tests.cpp
     tests/unit/kernel_tests.cpp
     tests/unit/engine_tests.cpp
-    tests/unit/natural_tests.cpp)
+    tests/unit/natural_tests.cpp
+    tests/unit/dynamics_tests.cpp)
   target_link_libraries(of_tests PRIVATE of_dsp Catch2::Catch2WithMain)
   add_test(NAME of_tests COMMAND of_tests)
 endif()

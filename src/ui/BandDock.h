@@ -33,9 +33,14 @@ private:
     std::array<bool, kMaxBands> used {};
     BandParams current {};
 
-    juce::ComboBox shapeBox, slopeBox, placeBox;
-    std::unique_ptr<ComboAttachment> shapeAttachment, slopeAttachment, placeAttachment;
+    juce::ComboBox shapeBox, slopeBox, placeBox, dynBox;
+    std::unique_ptr<ComboAttachment> shapeAttachment, slopeAttachment, placeAttachment, dynAttachment;
     Dial freqDial { "Freq" }, gainDial { "Gain" }, qDial { "Q" };
+    Dial thrDial { "Thresh" }, rangeDial { "Range" }, ratioDial { "Ratio" }, atkDial { "Attack" }, relDial { "Release" };
+    juce::TextButton autoButton { "Auto" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoAttachment;
+    juce::Rectangle<int> dynArea;
+    float liveDyn = 0.0f;
     juce::TextButton bypassButton { "Bypass" }, deleteButton { "Delete" };
     juce::Rectangle<int> chipsArea, shapeArea, dialsArea;
 

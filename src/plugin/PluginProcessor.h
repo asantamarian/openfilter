@@ -54,6 +54,8 @@ public:
     void setBandValue (int band, const char* suffix, float plainValue);
 
     float takePeak (int channel) noexcept { return engine.takePeak (channel); }
+    /** Live dynamic gain of a band in dB, for the display. */
+    float dynamicGainDb (int band) const noexcept { return engine.dynamicGainDb (band); }
 
     // Analyzer taps (mono sum), written by the audio thread only while an editor is open.
     SpscFifo preFifo, postFifo;
@@ -79,7 +81,8 @@ public:
     void copyActiveSlotTo (int index);
 
 private:
-    struct BandPtrs { std::atomic<float>* used, *on, *shape, *slope, *freq, *gain, *q, *place; };
+    struct BandPtrs { std::atomic<float>* used, *on, *shape, *slope, *freq, *gain, *q, *place,
+                                        * dyn, *range, *thr, *athr, *ratio, *knee, *atk, *rel, *trig; };
 
     void readSnapshot (ParamSnapshot&) const noexcept;
     // The phase mode changes latency; the host is told from the message thread.

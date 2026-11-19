@@ -17,7 +17,9 @@ public:
     void attach (juce::RangedAudioParameter* parameter, juce::UndoManager* undo);
     void setArcColour (juce::Colour c) { colour = c; repaint(); }
     void setBipolar (bool b) { bipolar = b; repaint(); }
-    void setDimmed (bool d) { dimmed = d; repaint(); }
+    void setDimmed (bool d) { if (d != dimmed) { dimmed = d; repaint(); } }
+    /** Replaces the value text, for a parameter that is read differently in some mode. */
+    std::function<juce::String()> textOverride;
 
     void paint (juce::Graphics&) override;
     void mouseDown (const juce::MouseEvent&) override;

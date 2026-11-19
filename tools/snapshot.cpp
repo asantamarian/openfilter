@@ -21,6 +21,10 @@ int main (int argc, char** argv)
     const int b4 = processor.addBand (of::Shape::Bell, 3200.0, -4.5);
     processor.setBandValue (b4, "q", 2.2f);
     processor.setBandValue (b4, "place", static_cast<float> (of::Placement::Mid));
+    processor.setBandValue (b4, "dyn", 1.0f);       // Dynamic
+    processor.setBandValue (b4, "range", -6.0f);
+    processor.setBandValue (b4, "athr", 0.0f);
+    processor.setBandValue (b4, "thr", -48.0f);
     const int b5 = processor.addBand (of::Shape::HighShelf, 9000.0, 4.0);
     processor.setBandValue (b5, "place", static_cast<float> (of::Placement::Side));
     processor.addBand (of::Shape::HighCut, 19000.0, 0.0);
