@@ -1,0 +1,76 @@
+#pragma once
+
+#include <juce_audio_utils/juce_audio_utils.h>
+
+#include "Parameters.h"
+#include "dsp/Engine.h"
+
+namespace of
+{
+class OpenFilterProcessor final : public juce::AudioProcessor
+{
+public:
+    OpenFilterProcessor();
+
+    //==============================================================================
+    void prepareToPlay (double sampleRate, int samplesPerBlock) override;
+    void releaseResources() override {}
+    bool isBusesLayoutSupported (const BusesLayout&) const override;
+    void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    void processBlock (juce::AudioBuffer<double>&, juce::MidiBuffer&) override;
+    bool supportsDoublePrecisionProcessing() const override { return true; }
+    juce::AudioProcessorParameter* getBypassParameter() const override { return bypassParam; }
+
+    juce::AudioProcessorEditor* createEditor() override;
+    bool hasEditor() const override { return true; }
+
+    const juce::String getName() const override { return "OpenFilter EQ"; }
+    bool acceptsMidi() const override { return false; }
+    bool producesMidi() const override { return false; }
+    double getTailLengthSeconds() const override { return 0.5; }
+
+    int getNumPrograms() override { return 1; }
+    int getCurrentProgram() override { return 0; }
+    void setCurrentProgram (int) override {}
+    const juce::String getProgramName (int) override { return {}; }
+    void changeProgramName (int, const juce::String&) override {}
+
+    void getStateInformation (juce::MemoryBlock&) override;
+    void setStateInformation (const void*, int) override;
+
+    //==============================================================================
+    // Message-thread helpers used by the editor. All band writes go through these.
+    BandParams readBand (int band) const;          // gainDb is the raw parameter value
+    double gainScale() const;
+    juce::RangedAudioParameter* bandParam (int band, const char* suffix) const;
+
+    /** Uses the lowest free slot. Returns its index, or -1 when all 32 are used. */
+    int addBand (Shape shape, double freq, double gainDb);
+    void removeBand (int band);
+    void setBandValue (int band, const char* suffix, float plainValue);
+
+    float takePeak (int channel) noexcept { return engine.takePeak (channel); }
+
+    juce::UndoManager undo;
+    juce::AudioProcessorValueTreeState apvts;
+
+    // Editor size, kept in the session state.
+    int editorWidth = 1280, editorHeight = 800;
+
+private:
+    struct BandPtrs { std::atomic<float>* used, *on, *shape, *slope, *freq, *gain, *q, *place; };
+
+    void readSnapshot (ParamSnapshot&) const noexcept;
+    template <typename Sample> void process (juce::AudioBuffer<Sample>&);
+
+    Engine engine;
+    std::array<BandPtrs, kMaxBands> bandPtrs {};
+    std::atomic<float>* gainScalePtr = nullptr, *outGainPtr = nullptr, *outPanPtr = nullptr,
+                      * invertPtr = nullptr, *bypassPtr = nullptr, *deltaPtr = nullptr;
+    juce::AudioProcessorParameter* bypassParam = nullptr;
+    std::vector<double> work[2];
+    int maxBlock = 512;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (OpenFilterProcessor)
+};
+} // namespace of

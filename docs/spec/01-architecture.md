@@ -165,8 +165,11 @@ construction and the UI needs no access to coefficients.
 
 - Main in/out: mono, stereo. Mono-in/stereo-out is not offered.
 - Sidechain input bus: optional, mono or stereo, disabled by default
-  (`isBusesLayoutSupported` accepts disabled, mono, stereo).
-- MIDI input: enabled, used only for MIDI learn.
+  (`isBusesLayoutSupported` accepts disabled, mono, stereo). **Not declared until
+  M3.** With JUCE 8.0.9 the LV2 wrapper crashes when a host leaves the optional
+  sidechain ports unconnected (it copies from a null port buffer); this must be
+  solved before the bus is added (03 section 12, R-7).
+- MIDI input: enabled from M7, used only for MIDI learn.
 - `supportsDoublePrecisionProcessing()` returns true; the engine is `double`
   internally and converts at the boundary for float hosts.
 

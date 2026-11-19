@@ -342,3 +342,4 @@ Both are unity gain for small signals. Voicing is research item R-4.
 | R-4 | Character voicing | Ship Clean only in v1.0 |
 | R-5 | Error of the parallel dynamic FIR form with overlapping bands | Serial form with added latency |
 | R-6 | Zero-latency accuracy near Nyquist and for high-order shapes (§3 table). Candidates: fit the denominator too (rational least squares in the same magnitude basis), Orfanidis-style closed forms for bells, or a per-band 2x path | Document the limit; Natural mode (§5) is the accurate option |
+| R-7 | LV2: JUCE's client wrapper reads every declared input port, so an unconnected optional sidechain port is a null dereference (seen in the host test). Options: patch the wrapper to treat null ports as silence, or ship LV2 with the sidechain always required | Ship the LV2 build without an external sidechain |

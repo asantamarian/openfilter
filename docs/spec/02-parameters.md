@@ -49,7 +49,7 @@ hint.
 | `smode` | Spectral Mode | choice | Absolute, Resonance | Resonance | | Read when `dyn` = Spectral |
 | `sres` | Spectral Resolution | float | 1/24 to 1 octave | 1/6 | log | Smoothing width of the per-bin gains |
 
-23 parameters per band, 736 in total.
+24 parameters per band, 768 in total; with the 13 globals the plugin exposes 781.
 
 When the threshold is in auto mode the same `thr` parameter is reinterpreted as an
 offset: `offsetDb = jmap(thr, -90, 0, -30, +30)`. The UI shows the right unit. This

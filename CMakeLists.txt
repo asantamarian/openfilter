@@ -8,7 +8,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
 
-option(OF_BUILD_PLUGIN "Build the plugin (needs JUCE)"        OFF)   # turns ON when src/plugin lands
+option(OF_BUILD_PLUGIN "Build the plugin (needs JUCE)"        ON)
 option(OF_BUILD_TESTS  "Build unit tests"                     ON)
 option(OF_BUILD_AAX    "Build AAX (needs AAX_SDK_PATH)"       OFF)
 
@@ -17,6 +17,8 @@ if(MSVC)
 else()
   set(OF_WARNINGS -Wall -Wextra -Wconversion -Wshadow -Wno-sign-conversion)
 endif()
+
+enable_testing()
 
 # ---- DSP core: no JUCE, no GUI -------------------------------------------------
 add_library(of_dsp STATIC
@@ -76,17 +78,32 @@ if(OF_BUILD_PLUGIN)
     PUBLIC  juce::juce_recommended_config_flags
             juce::juce_recommended_warning_flags)
 
-  # Renders the editor to a PNG without a host: tools/snapshot.cpp
-  juce_add_console_app(of_snapshot PRODUCT_NAME "of_snapshot")
-  target_sources(of_snapshot PRIVATE tools/snapshot.cpp)
-  target_include_directories(of_snapshot PRIVATE src)
-  target_compile_definitions(of_snapshot PRIVATE JUCE_STANDALONE_APPLICATION=0)
+  # Renders the editor to a PNG without a host and round-trips the state: tools/snapshot.cpp.
+  # It reuses the plugin's own compiled code, so it borrows that target's include paths and
+  # definitions instead of compiling the JUCE modules a second time.
+  add_executable(of_snapshot tools/snapshot.cpp)
+  target_include_directories(of_snapshot PRIVATE $<TARGET_PROPERTY:OpenFilterEQ,INCLUDE_DIRECTORIES>)
+  target_compile_definitions(of_snapshot PRIVATE $<TARGET_PROPERTY:OpenFilterEQ,COMPILE_DEFINITIONS>)
   target_link_libraries(of_snapshot PRIVATE OpenFilterEQ)
+
+  # A minimal host that loads the built VST3 and LV2 and exercises them:
+  # tests/integration/host_test.cpp.
+  if(OF_BUILD_TESTS)
+    juce_add_console_app(of_host_test PRODUCT_NAME "of_host_test")
+    target_sources(of_host_test PRIVATE tests/integration/host_test.cpp)
+    target_compile_definitions(of_host_test PRIVATE
+      JUCE_PLUGINHOST_VST3=1 JUCE_PLUGINHOST_LV2=1 JUCE_MODAL_LOOPS_PERMITTED=1 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+    target_link_libraries(of_host_test PRIVATE juce::juce_audio_utils juce::juce_recommended_config_flags)
+    add_dependencies(of_host_test OpenFilterEQ_VST3 OpenFilterEQ_LV2)
+    add_test(NAME of_host_test COMMAND of_host_test
+      "$<TARGET_PROPERTY:OpenFilterEQ_VST3,LIBRARY_OUTPUT_DIRECTORY>/OpenFilter EQ.vst3"
+      "$<TARGET_PROPERTY:OpenFilterEQ_LV2,LIBRARY_OUTPUT_DIRECTORY>/OpenFilter EQ.lv2")
+    add_test(NAME of_snapshot COMMAND of_snapshot "${CMAKE_BINARY_DIR}/editor.png")
+  endif()
 endif()
 
 # ---- Tests ----------------------------------------------------------------------
 if(OF_BUILD_TESTS)
-  enable_testing()
   add_subdirectory(extern/Catch2 EXCLUDE_FROM_ALL)
   add_executable(of_tests
     tests/unit/design_tests.cpp

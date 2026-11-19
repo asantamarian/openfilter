@@ -9,28 +9,44 @@ product; it is used only as a feature benchmark.
 
 ## Status
 
-In progress, milestone M1 (static EQ, zero latency). Build order is in
+Milestone M1 (static EQ, zero latency) is built. Build order is in
 `docs/spec/07-build-test-release.md`.
 
 | Part | State |
 |---|---|
 | Specs | Written; kept in step with what the tests show |
 | DSP core (`src/dsp`): prototypes, matched design, filter kernel, engine | Built, unit tests pass |
-| Plugin and editor (`src/plugin`, `src/ui`) | Not yet |
+| Plugin (`src/plugin`): 781 parameters, processor, session state | Built; VST3, LV2 and Standalone on Linux |
+| Editor (`src/ui`): response display with draggable bands, band dock, output meter | Built, first version |
+| Analyzer, presets, dynamics, linear phase, CLAP, and the rest of M2 to M7 | Not yet |
 
-Known gap: zero-latency filter accuracy near Nyquist and for high-order shapes is
-below the spec target. Measured figures and the plan are in `docs/spec/03-dsp.md`
-(section 3 and research item R-6).
+Known gaps:
+
+- Zero-latency filter accuracy near Nyquist and for high-order shapes is below the
+  spec target. Figures and plan: `docs/spec/03-dsp.md`, section 3 and item R-6.
+- Tested on Linux only. Windows and macOS builds have not been tried.
+- Validated with our own host test, not yet with pluginval or in a DAW.
+- The LV2 editor has not been exercised (the headless host test cannot embed it).
 
 ## Build and test
+
+Linux packages (Arch names): `alsa-lib freetype2 fontconfig libx11 libxrandr
+libxinerama libxcursor libxext mesa`, plus `cmake` and `ninja`.
 
 ```
 git clone --recurse-submodules https://github.com/asantamarian/openfilter.git
 cd openfilter
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-./build/of_tests
+cd build && ctest
 ```
+
+`ctest` runs three things: the DSP unit tests, a host test that loads the built VST3
+and LV2 the way a DAW does, and a tool that renders the editor to `build/editor.png`.
+
+The plugins are in `build/OpenFilterEQ_artefacts/Release/`. To try one in a DAW,
+copy `VST3/OpenFilter EQ.vst3` to `~/.vst3/` or `LV2/OpenFilter EQ.lv2` to `~/.lv2/`.
+The `Standalone/OpenFilter EQ` binary runs on its own.
 
 ## Specs
 
