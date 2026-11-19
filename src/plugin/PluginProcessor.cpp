@@ -152,7 +152,25 @@ void OpenFilterProcessor::getStateInformation (juce::MemoryBlock& dest)
     ui.setProperty ("width", editorWidth, nullptr);
     ui.setProperty ("height", editorHeight, nullptr);
     ui.setProperty ("preset", presetName, nullptr);
+    ui.setProperty ("scale", uiScale, nullptr);
+    ui.setProperty ("displayRange", displayRangeDb, nullptr);
+    ui.setProperty ("analyzer", analyzerOn, nullptr);
+    ui.setProperty ("table", tableOpen, nullptr);
     root.appendChild (ui, nullptr);
+
+    juce::ValueTree slotsTree ("Slots");
+    slotsTree.setProperty ("active", slot, nullptr);
+    for (int i = 0; i < kNumSlots; ++i)
+    {
+        const auto& values = slots[static_cast<size_t> (i)];
+        if (i == slot || values.empty())
+            continue;   // the active slot is the live parameters
+        juce::ValueTree one ("Slot");
+        one.setProperty ("index", i, nullptr);
+        one.setProperty ("values", juce::MemoryBlock (values.data(), values.size() * sizeof (float)).toBase64Encoding(), nullptr);
+        slotsTree.appendChild (one, nullptr);
+    }
+    root.appendChild (slotsTree, nullptr);
 
     juce::MemoryOutputStream stream (dest, false);
     root.writeToStream (stream);
@@ -185,10 +203,83 @@ void OpenFilterProcessor::setStateInformation (const void* data, int size)
         editorWidth = juce::jlimit (800, 8000, static_cast<int> (ui.getProperty ("width", 1280)));
         editorHeight = juce::jlimit (500, 8000, static_cast<int> (ui.getProperty ("height", 800)));
         presetName = ui.getProperty ("preset", "").toString();
+        uiScale = juce::jlimit (0.5f, 2.0f, static_cast<float> (ui.getProperty ("scale", 1.0)));
+        const double range = ui.getProperty ("displayRange", 12.0);
+        displayRangeDb = range <= 3.0 ? 3.0 : range <= 6.0 ? 6.0 : range <= 12.0 ? 12.0 : 30.0;
+        analyzerOn = ui.getProperty ("analyzer", true);
+        tableOpen = ui.getProperty ("table", false);
+    }
+
+    for (auto& values : slots)
+        values.clear();
+    slot = 0;
+    const auto slotsTree = root.getChildWithName ("Slots");
+    if (slotsTree.isValid())
+    {
+        slot = juce::jlimit (0, kNumSlots - 1, static_cast<int> (slotsTree.getProperty ("active", 0)));
+        for (const auto& one : slotsTree)
+        {
+            const int index = one.getProperty ("index", -1);
+            juce::MemoryBlock block;
+            if (index >= 0 && index < kNumSlots && block.fromBase64Encoding (one.getProperty ("values").toString())
+                && block.getSize() == static_cast<size_t> (getParameters().size()) * sizeof (float))
+            {
+                auto& values = slots[static_cast<size_t> (index)];
+                values.resize (static_cast<size_t> (getParameters().size()));
+                std::memcpy (values.data(), block.getData(), block.getSize());
+            }
+        }
     }
 }
 
 //==============================================================================
+std::vector<float> OpenFilterProcessor::captureValues() const
+{
+    std::vector<float> values;
+    values.reserve (static_cast<size_t> (getParameters().size()));
+    for (auto* p : getParameters())
+        values.push_back (p->getValue());
+    return values;
+}
+
+void OpenFilterProcessor::applyValues (const std::vector<float>& values)
+{
+    const auto& all = getParameters();
+    if (values.size() != static_cast<size_t> (all.size()))
+        return;
+    auto* delta = apvts.getParameter ("delta");
+    for (int i = 0; i < all.size(); ++i)
+    {
+        auto* p = all[i];
+        if (p == bypassParam || p == delta)
+            continue;
+        if (! juce::approximatelyEqual (p->getValue(), values[static_cast<size_t> (i)]))
+            p->setValueNotifyingHost (values[static_cast<size_t> (i)]);
+    }
+}
+
+void OpenFilterProcessor::switchSlot (int index)
+{
+    index = juce::jlimit (0, kNumSlots - 1, index);
+    if (index == slot)
+        return;
+    slots[static_cast<size_t> (slot)] = captureValues();
+    slot = index;
+    // An unused slot starts as a copy of where you came from.
+    if (! slots[static_cast<size_t> (slot)].empty())
+    {
+        undo.beginNewTransaction ("Switch to slot " + juce::String::charToString (static_cast<juce::juce_wchar> ('A' + slot)));
+        applyValues (slots[static_cast<size_t> (slot)]);
+    }
+}
+
+void OpenFilterProcessor::copyActiveSlotTo (int index)
+{
+    index = juce::jlimit (0, kNumSlots - 1, index);
+    if (index != slot)
+        slots[static_cast<size_t> (index)] = captureValues();
+}
+
 juce::RangedAudioParameter* OpenFilterProcessor::bandParam (int band, const char* suffix) const
 {
     return apvts.getParameter (params::bandId (band, suffix));

@@ -113,7 +113,7 @@ void ResponseDisplay::refresh()
     lastUpdateMs = now;
     preAnalyzer.setSampleRate (processor.getSampleRate());
     postAnalyzer.setSampleRate (processor.getSampleRate());
-    const bool preLive = preAnalyzer.update (elapsed), postLive = postAnalyzer.update (elapsed);
+    const bool preLive = analyzerVisible && preAnalyzer.update (elapsed), postLive = analyzerVisible && postAnalyzer.update (elapsed);
     if (preLive || postLive || spectraShown)
     {
         spectraShown = preLive || postLive;
@@ -180,6 +180,26 @@ void ResponseDisplay::selectBand (int band)
 }
 
 void ResponseDisplay::resized() { rebuildCurves(); }
+
+void ResponseDisplay::setRangeDb (double range)
+{
+    if (juce::exactlyEqual (range, rangeDb))
+        return;
+    rangeDb = range;
+    rebuildCurves();
+    repaint();
+}
+
+void ResponseDisplay::setAnalyzerVisible (bool visible)
+{
+    analyzerVisible = visible;
+    processor.analyzerActive = visible;   // no taps on the audio thread while hidden
+    if (! visible)
+    {
+        preAnalyzer.clear();
+        postAnalyzer.clear();
+    }
+}
 
 void ResponseDisplay::rebuildCurves()
 {
@@ -532,7 +552,7 @@ void ResponseDisplay::showBandMenu (int band)
     juce::PopupMenu menu, shapes, slopes, places;
     const auto& b = bands[static_cast<size_t> (band)];
     for (int i = 0; i < params::shapeNames().size(); ++i)
-        shapes.addItem (100 + i, params::shapeNames()[i], true, static_cast<int> (b.shape) == i);
+        shapes.addItem (100 + i, params::shapeLabels()[i], true, static_cast<int> (b.shape) == i);
     for (int i = 0; i < params::slopeNames().size(); ++i)
         slopes.addItem (200 + i, params::slopeNames()[i], true, static_cast<int> (b.slope) == i);
     for (int i = 0; i < params::placementNames().size(); ++i)

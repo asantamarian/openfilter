@@ -57,6 +57,12 @@ const juce::StringArray& shapeNames()
     return names;
 }
 
+const juce::StringArray& shapeLabels()
+{
+    static const juce::StringArray names { "Bell", "Low Shelf", "High Shelf", "Low Cut (high-pass)", "High Cut (low-pass)", "Notch", "Band Pass", "Tilt Shelf", "Flat Tilt", "All Pass" };
+    return names;
+}
+
 const juce::StringArray& slopeNames()
 {
     static const juce::StringArray names { "6 dB/oct", "12 dB/oct", "18 dB/oct", "24 dB/oct", "30 dB/oct", "36 dB/oct", "48 dB/oct", "72 dB/oct", "96 dB/oct", "Brickwall" };

@@ -68,6 +68,7 @@ if(OF_BUILD_PLUGIN)
     src/ui/ResponseDisplay.cpp
     src/ui/SpectrumAnalyzer.cpp
     src/ui/BandDock.cpp
+    src/ui/BandTable.cpp
     src/ui/Dial.cpp)
   target_include_directories(OpenFilterEQ PRIVATE src)
   target_compile_definitions(OpenFilterEQ PUBLIC

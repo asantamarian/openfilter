@@ -66,6 +66,18 @@ public:
     int editorWidth = 1280, editorHeight = 800;
     juce::String presetName;   // empty until a preset is loaded or saved
 
+    // View settings, kept in the session state.
+    float uiScale = 1.0f;
+    double displayRangeDb = 12.0;
+    bool analyzerOn = true, tableOpen = false;
+
+    // A/B/C/D: four full parameter snapshots (docs/spec/06-state.md section 5). Bypass and
+    // delta are left alone when a slot is recalled.
+    static constexpr int kNumSlots = 4;
+    int activeSlot() const noexcept { return slot; }
+    void switchSlot (int index);
+    void copyActiveSlotTo (int index);
+
 private:
     struct BandPtrs { std::atomic<float>* used, *on, *shape, *slope, *freq, *gain, *q, *place; };
 
@@ -74,6 +86,8 @@ private:
     void parameterChanged (const juce::String&, float) override { triggerAsyncUpdate(); }
     void handleAsyncUpdate() override { updateLatency(); }
     void updateLatency();
+    std::vector<float> captureValues() const;
+    void applyValues (const std::vector<float>&);
     template <typename Sample> void process (juce::AudioBuffer<Sample>&);
 
     Engine engine;
@@ -84,6 +98,8 @@ private:
     std::vector<double> work[2];
     std::vector<float> tap;
     int maxBlock = 512;
+    int slot = 0;
+    std::array<std::vector<float>, kNumSlots> slots;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (OpenFilterProcessor)
 };

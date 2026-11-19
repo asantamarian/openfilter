@@ -77,6 +77,29 @@ int main (int argc, char** argv)
                       && near (parseFrequency ("hello"), 0.0) && near (parseFrequency (""), 0.0);
     std::printf ("frequency parsing: %s\n", parseOk ? "ok" : "WRONG");
 
+    // A/B/C/D: edit in B, go back to A, and both must come back as they were.
+    bool slotsOk = false;
+    {
+        const double freqA = processor.readBand (b4).freq;
+        processor.switchSlot (1);
+        processor.setBandValue (b4, "freq", 500.0f);
+        processor.switchSlot (0);
+        const bool backToA = std::abs (processor.readBand (b4).freq - freqA) < 1.0e-3 * freqA;
+        processor.switchSlot (1);
+        const bool bKept = std::abs (processor.readBand (b4).freq - 500.0) < 0.5;
+        // Slots survive a session save and load.
+        juce::MemoryBlock saved;
+        processor.getStateInformation (saved);
+        of::OpenFilterProcessor reloaded;
+        reloaded.setStateInformation (saved.getData(), static_cast<int> (saved.getSize()));
+        const bool activeKept = reloaded.activeSlot() == 1 && std::abs (reloaded.readBand (b4).freq - 500.0) < 0.5;
+        reloaded.switchSlot (0);
+        const bool otherKept = std::abs (reloaded.readBand (b4).freq - freqA) < 1.0e-3 * freqA;
+        processor.switchSlot (0);
+        slotsOk = backToA && bKept && activeKept && otherKept;
+        std::printf ("A/B/C/D slots: %s\n", slotsOk ? "ok" : "WRONG");
+    }
+
     std::unique_ptr<juce::AudioProcessorEditor> editor (processor.createEditor());
 
     // Run some audio through so the meters and the analyzer show something: pink-ish noise
@@ -108,5 +131,23 @@ int main (int argc, char** argv)
     juce::FileOutputStream stream (out);
     const bool written = stream.openedOk() && juce::PNGImageFormat().writeImageToStream (image, stream);
     std::printf ("%s %s (%d x %d)\n", written ? "wrote" : "FAILED to write", out.getFullPathName().toRawUTF8(), image.getWidth(), image.getHeight());
-    return written && roundTrip && presetOk && parseOk ? 0 : 1;
+
+    // A second image with the band table open and a wider gain range.
+    processor.tableOpen = true;
+    processor.displayRangeDb = 30.0;
+    editor.reset();
+    editor.reset (processor.createEditor());
+    if (auto* e = dynamic_cast<of::OpenFilterEditor*> (editor.get()))
+    {
+        e->responseDisplay().selectBand (b4);
+        e->updateNow();
+    }
+    const auto tableFile = out.getSiblingFile (out.getFileNameWithoutExtension() + "-table.png");
+    tableFile.deleteFile();
+    juce::FileOutputStream tableStream (tableFile);
+    const bool tableWritten = tableStream.openedOk()
+        && juce::PNGImageFormat().writeImageToStream (editor->createComponentSnapshot (editor->getLocalBounds(), false, 1.0f), tableStream);
+    std::printf ("%s %s\n", tableWritten ? "wrote" : "FAILED to write", tableFile.getFullPathName().toRawUTF8());
+
+    return written && tableWritten && roundTrip && presetOk && parseOk && slotsOk ? 0 : 1;
 }

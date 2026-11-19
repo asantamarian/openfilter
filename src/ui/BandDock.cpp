@@ -9,7 +9,7 @@ constexpr int kChipW = 38, kChipH = 28, kChipGap = 6, kChipsPerRow = 8;
 
 BandDock::BandDock (OpenFilterProcessor& p) : processor (p)
 {
-    shapeBox.addItemList (params::shapeNames(), 1);
+    shapeBox.addItemList (params::shapeLabels(), 1);
     slopeBox.addItemList (params::slopeNames(), 1);
     placeBox.addItemList (params::placementNames(), 1);
     shapeBox.setTitle ("Shape");

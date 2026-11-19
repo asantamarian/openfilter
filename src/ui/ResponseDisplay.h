@@ -21,6 +21,10 @@ public:
     void selectBand (int band);
     std::function<void (int)> onSelectionChanged;
 
+    /** Vertical range of the gain axis: 3, 6, 12 or 30 dB each way. */
+    void setRangeDb (double range);
+    void setAnalyzerVisible (bool visible);
+
     void paint (juce::Graphics&) override;
     void resized() override;
     void mouseMove (const juce::MouseEvent&) override;
@@ -58,7 +62,7 @@ private:
     juce::Path preFill, postLine;
     std::vector<float> spectrumPoints, spectrumSmooth;
     juce::uint32 lastUpdateMs = 0;
-    bool spectraShown = false;
+    bool spectraShown = false, analyzerVisible = true;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ResponseDisplay)
 };

@@ -11,6 +11,9 @@ namespace of::params
 juce::String bandId (int band, const char* suffix);
 
 const juce::StringArray& shapeNames();
+/** Shape names as shown in menus: the cuts also carry their other common name. The
+    parameter itself keeps shapeNames(), which presets and hosts rely on. */
+const juce::StringArray& shapeLabels();
 const juce::StringArray& slopeNames();
 const juce::StringArray& placementNames();
 

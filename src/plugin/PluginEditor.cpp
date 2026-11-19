@@ -28,7 +28,7 @@ void applyTheme (juce::LookAndFeel_V4& look)
 } // namespace
 
 OpenFilterEditor::OpenFilterEditor (OpenFilterProcessor& p)
-    : AudioProcessorEditor (p), processor (p), display (p), dock (p),
+    : AudioProcessorEditor (p), processor (p), display (p), dock (p), table (p),
       bypassAttachment (p.apvts, "bypass", bypassButton),
       deltaAttachment (p.apvts, "delta", deltaButton)
 {
@@ -61,8 +61,28 @@ OpenFilterEditor::OpenFilterEditor (OpenFilterProcessor& p)
     for (auto* b : { &presetButton, &undoButton, &redoButton, &bypassButton, &deltaButton })
         addAndMakeVisible (*b);
 
-    display.onSelectionChanged = [this] (int band) { dock.setBand (band); };
+    viewButton.onClick = [this] { showViewMenu(); };
+    addAndMakeVisible (viewButton);
+    for (int i = 0; i < OpenFilterProcessor::kNumSlots; ++i)
+    {
+        auto& b = slotButtons[static_cast<size_t> (i)];
+        const auto letter = juce::String::charToString (static_cast<juce::juce_wchar> ('A' + i));
+        b.setButtonText (letter);
+        b.setTitle ("Slot " + letter);
+        b.setTooltip ("Switch to slot " + letter + ". Copy the current settings to another slot from the View menu.");
+        b.onClick = [this, i] { processor.switchSlot (i); };
+        addAndMakeVisible (b);
+    }
+
+    addChildComponent (table);
+    table.onSelectBand = [this] (int band) { display.selectBand (band); };
+    display.onSelectionChanged = [this] (int band)
+    {
+        dock.setBand (band);
+        table.setSelectedBand (band);
+    };
     dock.onSelectBand = [this] (int band) { display.selectBand (band); };
+    applyViewSettings();
 
     // Read the saved size first: setting the limits resizes the editor, which stores a size.
     const int width = p.editorWidth, height = p.editorHeight;
@@ -88,11 +108,15 @@ void OpenFilterEditor::resized()
     dock.setBounds (area.removeFromBottom (kDockHeight));
     outputColumn = area.removeFromRight (kOutputWidth);
     display.setBounds (area);
+    // The band table covers the lower part of the display when open.
+    table.setBounds (area.withTop (area.getBottom() - juce::jmin (area.getHeight() * 45 / 100, 26 * 12)));
 
     auto right = topBar.reduced (16, 11);
     bypassButton.setBounds (right.removeFromRight (72));
     right.removeFromRight (8);
     deltaButton.setBounds (right.removeFromRight (64));
+    right.removeFromRight (8);
+    viewButton.setBounds (right.removeFromRight (56));
     right.removeFromRight (16);
     phaseBox.setBounds (right.removeFromRight (132));
     right.removeFromRight (8);
@@ -102,7 +126,17 @@ void OpenFilterEditor::resized()
     left.removeFromLeft (6);
     redoButton.setBounds (left.removeFromLeft (60));
     left.removeFromLeft (16);
-    presetButton.setBounds (left.removeFromLeft (juce::jlimit (100, 260, right.getRight() - left.getX() - 16)));
+    // The slot buttons and the latency readout give way first when the window is narrow.
+    const bool roomy = getWidth() >= 1040;
+    const int slotsWidth = roomy ? 4 * 30 + 3 * 2 + 12 : 0;
+    presetButton.setBounds (left.removeFromLeft (juce::jlimit (90, 240, right.getRight() - left.getX() - 16 - slotsWidth)));
+    left.removeFromLeft (12);
+    for (auto& b : slotButtons)
+    {
+        b.setVisible (roomy);
+        b.setBounds (left.removeFromLeft (30));
+        left.removeFromLeft (2);
+    }
 
     auto col = outputColumn.reduced (0, 12);
     col.removeFromTop (36);
@@ -171,6 +205,58 @@ void OpenFilterEditor::paintMeter (juce::Graphics& g)
         }
         x += barW + gap;
     }
+}
+
+void OpenFilterEditor::applyViewSettings()
+{
+    display.setRangeDb (processor.displayRangeDb);
+    display.setAnalyzerVisible (processor.analyzerOn);
+    table.setVisible (processor.tableOpen);
+    if (! juce::approximatelyEqual (processor.uiScale, static_cast<float> (getTransform().getScaleFactor())))
+        setScaleFactor (processor.uiScale);
+}
+
+void OpenFilterEditor::showViewMenu()
+{
+    juce::PopupMenu menu, scale, range, copy, history;
+    for (int percent : { 50, 75, 100, 125, 150, 200 })
+        scale.addItem (1000 + percent, juce::String (percent) + " %", true, juce::roundToInt (processor.uiScale * 100.0f) == percent);
+    for (int db : { 3, 6, 12, 30 })
+        range.addItem (2000 + db, juce::String::fromUTF8 ("\xc2\xb1") + juce::String (db) + " dB", true, juce::roundToInt (processor.displayRangeDb) == db);
+    const auto letter = [] (int i) { return juce::String::charToString (static_cast<juce::juce_wchar> ('A' + i)); };
+    for (int i = 0; i < OpenFilterProcessor::kNumSlots; ++i)
+        if (i != processor.activeSlot())
+            copy.addItem (3000 + i, "Copy " + letter (processor.activeSlot()) + " to " + letter (i));
+
+    const auto steps = processor.undo.getUndoDescriptions();
+    for (int i = 0; i < juce::jmin (15, steps.size()); ++i)
+        history.addItem (4000 + i, "Undo back to before: " + (steps[i].isEmpty() ? juce::String ("edit") : steps[i]));
+    if (steps.isEmpty())
+        history.addItem (3999, "Nothing to undo", false);
+
+    menu.addItem (1, "Band table", true, processor.tableOpen);
+    menu.addItem (2, "Spectrum analyzer", true, processor.analyzerOn);
+    menu.addSeparator();
+    menu.addSubMenu ("Display range", range);
+    menu.addSubMenu ("Interface size", scale);
+    menu.addSeparator();
+    menu.addSubMenu ("Slots", copy);
+    menu.addSubMenu ("History", history);
+
+    juce::Component::SafePointer<OpenFilterEditor> safe (this);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (viewButton).withParentComponent (this), [safe] (int result)
+    {
+        if (safe == nullptr || result == 0)
+            return;
+        auto& proc = safe->processor;
+        if (result == 1) proc.tableOpen = ! proc.tableOpen;
+        else if (result == 2) proc.analyzerOn = ! proc.analyzerOn;
+        else if (result >= 4000) { for (int i = 0; i <= result - 4000; ++i) proc.undo.undo(); }
+        else if (result >= 3000) proc.copyActiveSlotTo (result - 3000);
+        else if (result >= 2000) proc.displayRangeDb = result - 2000;
+        else if (result >= 1000) proc.uiScale = static_cast<float> (result - 1000) / 100.0f;
+        safe->applyViewSettings();
+    });
 }
 
 void OpenFilterEditor::showPresetMenu()
@@ -245,6 +331,10 @@ void OpenFilterEditor::timerCallback()
 
     display.refresh();
     dock.refresh();
+    if (table.isVisible())
+        table.refresh();
+    for (int i = 0; i < OpenFilterProcessor::kNumSlots; ++i)
+        slotButtons[static_cast<size_t> (i)].setToggleState (i == processor.activeSlot(), juce::dontSendNotification);
     undoButton.setEnabled (processor.undo.canUndo());
     redoButton.setEnabled (processor.undo.canRedo());
 
