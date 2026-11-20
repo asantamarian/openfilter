@@ -58,18 +58,27 @@ BandTable::BandTable (OpenFilterProcessor& p) : processor (p)
     header.addColumn ("Q", Q, 80, 60, 200, fixed | juce::TableHeaderComponent::resizable);
     header.addColumn ("Slope", SlopeCol, 110, 90, 200, fixed | juce::TableHeaderComponent::resizable);
     header.addColumn ("Channel", Channel, 100, 80, 200, fixed | juce::TableHeaderComponent::resizable);
-    header.setColour (juce::TableHeaderComponent::backgroundColourId, theme::panel);
-    header.setColour (juce::TableHeaderComponent::textColourId, theme::textMuted);
-    header.setColour (juce::TableHeaderComponent::outlineColourId, theme::line);
-    header.setColour (juce::TableHeaderComponent::highlightColourId, theme::raised);
-
-    table.setColour (juce::ListBox::backgroundColourId, theme::panel);
-    table.setColour (juce::ListBox::outlineColourId, theme::line);
+    themeChanged();
     table.setRowHeight (26);
     table.setHeaderHeight (26);
     table.setOutlineThickness (0);
     addAndMakeVisible (table);
     refresh();
+}
+
+void BandTable::themeChanged()
+{
+    auto& header = table.getHeader();
+    header.setColour (juce::TableHeaderComponent::backgroundColourId, theme::panel);
+    header.setColour (juce::TableHeaderComponent::textColourId, theme::textMuted);
+    header.setColour (juce::TableHeaderComponent::outlineColourId, theme::line);
+    header.setColour (juce::TableHeaderComponent::highlightColourId, theme::raised);
+    table.setColour (juce::ListBox::backgroundColourId, theme::panel);
+    table.setColour (juce::ListBox::outlineColourId, theme::line);
+    rows.clear();   // rebuild the cells so their text colours follow
+    table.updateContent();
+    refresh();
+    repaint();
 }
 
 void BandTable::refresh()

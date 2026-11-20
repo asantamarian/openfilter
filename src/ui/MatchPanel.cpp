@@ -36,6 +36,38 @@ MatchPanel::MatchPanel (OpenFilterProcessor& p, ResponseDisplay& d) : processor 
                 safe->loadReferenceFile (fc.getResult());
         });
     };
+    instanceButton.setTooltip ("Use another OpenFilter EQ in this project as the reference: its long-term average output since it was loaded.");
+    instanceButton.onClick = [this]
+    {
+        juce::PopupMenu menu;
+        const auto entries = processor.hub->entries();
+        int listed = 0;
+        for (const auto& e : entries)
+            if (e.processor != &processor)
+            {
+                menu.addItem (e.serial, e.name, e.hasSignal);
+                ++listed;
+            }
+        if (listed == 0)
+            menu.addItem (-1, "No other instance in this project", false);
+        juce::Component::SafePointer<MatchPanel> safe (this);
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (instanceButton).withParentComponent (getTopLevelComponent()), [safe] (int serial)
+        {
+            if (safe == nullptr || serial <= 0)
+                return;
+            for (const auto& e : safe->processor.hub->entries())
+                if (e.serial == serial)
+                {
+                    safe->reference = e.average;
+                    safe->haveReference = true;
+                    safe->referenceName = e.name;
+                    safe->status = {};
+                    safe->updateTarget();
+                }
+        });
+    };
+    addAndMakeVisible (instanceButton);
+
     for (int n : { 3, 5, 8, 12, 16, 24 })
         bandsBox.addItem (juce::String (n) + " bands", n);
     bandsBox.setSelectedId (8, juce::dontSendNotification);
@@ -154,7 +186,7 @@ void MatchPanel::paint (juce::Graphics& g)
     else if (sourceButton.getToggleState())        text = "Measuring this track: " + juce::String (display.captureSeconds (false), 1) + " s";
     else if (sidechainButton.getToggleState())     text = "Measuring the sidechain: " + juce::String (display.captureSeconds (true), 1) + " s";
     else if (! haveSource)                         text = "1. Play the track and capture it.";
-    else if (! haveReference)                      text = "2. Capture a reference from the sidechain, or load a file.";
+    else if (! haveReference)                      text = "2. Take a reference: the sidechain, an audio file, or another instance.";
     else                                           text = "Reference: " + referenceName + ". Fit error " + juce::String (lastError, 2) + " dB. The dashed line is the target.";
     g.setColour (theme::text);
     g.setFont (theme::ui (12.0f));
@@ -164,15 +196,17 @@ void MatchPanel::paint (juce::Graphics& g)
 void MatchPanel::resized()
 {
     auto row = getLocalBounds().reduced (14, 0).withTop (32).withHeight (28);
-    sourceButton.setBounds (row.removeFromLeft (150));
+    closeButton.setBounds (row.removeFromRight (60));
+    sourceButton.setBounds (row.removeFromLeft (132));
+    row.removeFromLeft (5);
+    sidechainButton.setBounds (row.removeFromLeft (124));
+    row.removeFromLeft (5);
+    fileButton.setBounds (row.removeFromLeft (108));
+    row.removeFromLeft (5);
+    instanceButton.setBounds (row.removeFromLeft (112));
+    row.removeFromLeft (10);
+    bandsBox.setBounds (row.removeFromLeft (92));
     row.removeFromLeft (6);
-    sidechainButton.setBounds (row.removeFromLeft (140));
-    row.removeFromLeft (6);
-    fileButton.setBounds (row.removeFromLeft (124));
-    row.removeFromLeft (14);
-    bandsBox.setBounds (row.removeFromLeft (100));
-    row.removeFromLeft (6);
-    applyButton.setBounds (row.removeFromLeft (70));
-    closeButton.setBounds (row.removeFromRight (64));
+    applyButton.setBounds (row.removeFromLeft (62));
 }
 } // namespace of

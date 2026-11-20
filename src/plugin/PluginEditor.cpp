@@ -32,6 +32,7 @@ OpenFilterEditor::OpenFilterEditor (OpenFilterProcessor& p)
       bypassAttachment (p.apvts, "bypass", bypassButton),
       deltaAttachment (p.apvts, "delta", deltaButton)
 {
+    theme::loadSaved();   // the user's theme, before anything is drawn
     applyTheme (look);
     setLookAndFeel (&look);
 
@@ -324,6 +325,20 @@ void OpenFilterEditor::applyViewSettings()
         setScaleFactor (processor.uiScale);
 }
 
+void OpenFilterEditor::themeChanged()
+{
+    // Colours held by the look and feel and by components that cache them are re-read; the
+    // rest is drawn from the tokens on the next paint.
+    applyTheme (look);
+    outputDial.setArcColour (theme::text);
+    balanceDial.setArcColour (theme::text);
+    scaleDial.setArcColour (theme::accent);
+    table.themeChanged();
+    dock.setBand (display.selectedBand());
+    sendLookAndFeelChange();
+    repaint();
+}
+
 void OpenFilterEditor::showViewMenu()
 {
     juce::PopupMenu menu, scale, range, copy, history, look;
@@ -378,6 +393,14 @@ void OpenFilterEditor::showViewMenu()
     menu.addSeparator();
     menu.addSubMenu ("Display range", range);
     menu.addSubMenu ("Interface size", scale);
+    juce::PopupMenu themes;
+    const auto themeNames = theme::available();
+    for (int i = 0; i < themeNames.size(); ++i)
+        themes.addItem (9000 + i, themeNames[i], true, themeNames[i] == theme::currentName());
+    themes.addSeparator();
+    themes.addItem (8990, "Save the current colours as a theme file to edit");
+    themes.addItem (8991, "Show themes folder");
+    menu.addSubMenu ("Theme", themes);
     menu.addSubMenu ("Dynamics lookahead", look);
 
     // Character: saturation after the EQ. Drive is also a host parameter.
@@ -408,6 +431,23 @@ void OpenFilterEditor::showViewMenu()
             if (! safe->instancePanel.isVisible())
                 safe->display.setOverlays ({});
         }
+        else if (result >= 9000)
+        {
+            juce::String error;
+            const auto names = theme::available();
+            if (result - 9000 < names.size() && theme::apply (names[result - 9000], error))
+            {
+                theme::save (names[result - 9000]);
+                safe->themeChanged();
+            }
+        }
+        else if (result == 8990)
+        {
+            const auto file = theme::userFolder().getNonexistentChildFile ("My theme", ".oftheme", false);
+            file.replaceWithText (theme::exampleFile());
+            file.revealToUser();
+        }
+        else if (result == 8991) theme::userFolder().revealToUser();
         else if (result >= 8000) safe->display.beginSketch (result - 8000);
         else if (result == 4) proc.analyzerFrozen = ! proc.analyzerFrozen;
         else if (result >= 7300) proc.analyzerSpectrogram = result == 7301;

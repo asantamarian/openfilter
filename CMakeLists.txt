@@ -84,6 +84,7 @@ if(OF_BUILD_PLUGIN)
     src/ui/AdvancedPanel.cpp
     src/ui/BandDock.cpp
     src/ui/BandTable.cpp
+    src/ui/Theme.cpp
     src/ui/MatchPanel.cpp
     src/ui/InstancePanel.cpp
     src/hub/InstanceHub.cpp

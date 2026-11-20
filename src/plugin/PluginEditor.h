@@ -33,6 +33,10 @@ private:
     void showPresetMenu();
     void showViewMenu();
     void applyViewSettings();
+public:
+    /** Re-reads the theme after it changed. */
+    void themeChanged();
+private:
 
     OpenFilterProcessor& processor;
     theme::NeonLook look;

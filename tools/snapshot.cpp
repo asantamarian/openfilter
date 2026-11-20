@@ -386,6 +386,30 @@ int main (int argc, char** argv)
         stillListed = stillListed || e.name == "Bass";
     hubOk = hubOk && ! stillListed;
 
+    // OF_SNAPSHOT_THEME=<name> renders the main picture in that theme (without saving the
+    // choice). Every built-in theme must load, and a theme file must round-trip.
+    bool themeOk = of::theme::available().size() >= 3;
+    {
+        juce::String error;
+        for (const auto& name : { "High contrast", "Daylight", "Nocturne" })
+            themeOk = themeOk && of::theme::apply (name, error) && of::theme::currentName() == name;
+        themeOk = themeOk && ! of::theme::isLight() && ! of::theme::apply ("no such theme", error) && of::theme::currentName() == "Nocturne";
+        themeOk = themeOk && of::theme::apply ("Daylight", error) && of::theme::isLight();
+        juce::var parsed;
+        themeOk = themeOk && juce::JSON::parse (of::theme::exampleFile(), parsed).wasOk() && parsed["ground"].toString().equalsIgnoreCase ("#F4F5F8")
+               && parsed["bands"].isArray() && parsed["bands"].getArray()->size() == 8;
+        of::theme::apply ("Nocturne", error);
+        std::printf ("themes: %s (%d available)\n", themeOk ? "ok" : "WRONG", of::theme::available().size());
+
+        const auto wanted = juce::SystemStats::getEnvironmentVariable ("OF_SNAPSHOT_THEME", "");
+        if (wanted.isNotEmpty() && of::theme::apply (wanted, error))
+            if (auto* e = dynamic_cast<of::OpenFilterEditor*> (editor.get()))
+            {
+                e->themeChanged();
+                e->updateNow();
+            }
+    }
+
     const auto image = editor->createComponentSnapshot (editor->getLocalBounds(), false, 1.0f);
     out.deleteFile();
     juce::FileOutputStream stream (out);
@@ -432,5 +456,5 @@ int main (int argc, char** argv)
     }
     std::printf ("wrote %s (%d x %d)\n", smallFile.getFullPathName().toRawUTF8(), editor->getWidth(), editor->getHeight());
 
-    return written && tableWritten && roundTrip && presetOk && parseOk && slotsOk && factoryOk && matchOk && hubOk && midiOk && multiOk ? 0 : 1;
+    return written && tableWritten && roundTrip && presetOk && parseOk && slotsOk && factoryOk && matchOk && hubOk && midiOk && multiOk && themeOk ? 0 : 1;
 }

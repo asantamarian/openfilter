@@ -7,27 +7,41 @@
 /** Design tokens of the default theme "Nocturne" (docs/spec/05-ui.md section 2). */
 namespace of::theme
 {
-inline const juce::Colour ground      { 0xff07080F };
-inline const juce::Colour panel       { 0xff0E101B };
-inline const juce::Colour raised      { 0xff171A2B };
-inline const juce::Colour line        { 0xff262B45 };
-inline const juce::Colour lineStrong  { 0xff3A4168 };
-inline const juce::Colour gridMinor   { 0xff12152A };
-inline const juce::Colour gridMajor   { 0xff1E2347 };
-inline const juce::Colour gridH       { 0xff171B38 };
-inline const juce::Colour textFaint   { 0xff7D8798 };
-inline const juce::Colour textMuted   { 0xff9AA3B2 };
-inline const juce::Colour text        { 0xffE8ECF2 };
-inline const juce::Colour curve       { 0xffF4F7FB };
-inline const juce::Colour accent      { 0xff6EE7C5 };
-inline const juce::Colour warn        { 0xffFFB454 };
+// The tokens are plain variables so a theme can replace them (Theme.cpp). They start as
+// Nocturne. A theme is a user-wide choice, shared by every instance in the process.
+inline juce::Colour ground      { 0xff07080F };
+inline juce::Colour panel       { 0xff0E101B };
+inline juce::Colour raised      { 0xff171A2B };
+inline juce::Colour line        { 0xff262B45 };
+inline juce::Colour lineStrong  { 0xff3A4168 };
+inline juce::Colour gridMinor   { 0xff12152A };
+inline juce::Colour gridMajor   { 0xff1E2347 };
+inline juce::Colour gridH       { 0xff171B38 };
+inline juce::Colour textFaint   { 0xff7D8798 };
+inline juce::Colour textMuted   { 0xff9AA3B2 };
+inline juce::Colour text        { 0xffE8ECF2 };
+inline juce::Colour curve       { 0xffF4F7FB };
+inline juce::Colour accent      { 0xff6EE7C5 };
+inline juce::Colour warn        { 0xffFFB454 };
 
-inline juce::Colour band (int index)
-{
-    static const juce::Colour colours[] = { juce::Colour (0xffFF7A6B), juce::Colour (0xffFFB454), juce::Colour (0xffB6E36A), juce::Colour (0xff5FE3B5),
-                                            juce::Colour (0xff5CC8FF), juce::Colour (0xff8C9BFF), juce::Colour (0xffC58CFF), juce::Colour (0xffFF7EC2) };
-    return colours[static_cast<size_t> (index & 7)];
-}
+inline std::array<juce::Colour, 8> bandColours { juce::Colour (0xffFF7A6B), juce::Colour (0xffFFB454), juce::Colour (0xffB6E36A), juce::Colour (0xff5FE3B5),
+                                                 juce::Colour (0xff5CC8FF), juce::Colour (0xff8C9BFF), juce::Colour (0xffC58CFF), juce::Colour (0xffFF7EC2) };
+
+inline juce::Colour band (int index) { return bandColours[static_cast<size_t> (index & 7)]; }
+
+/** Themes (docs/spec/06-state.md section 6): three built in, plus JSON files with the
+    extension .oftheme in userFolder(). */
+juce::StringArray available();
+juce::String currentName();
+/** Switches theme. Returns false, with a message, if a theme file cannot be read. */
+bool apply (const juce::String& name, juce::String& error);
+/** Remembers the choice for next time, and loads it. */
+void save (const juce::String& name);
+void loadSaved();
+juce::File userFolder();
+/** The current theme as the text of a theme file: a starting point for making one. */
+juce::String exampleFile();
+bool isLight();
 
 // The interface carries its own fonts, so it looks the same on every machine: Inter for
 // text, JetBrains Mono for numbers. Loaded once per process.

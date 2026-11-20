@@ -15,6 +15,8 @@ public:
     /** Called from the editor's timer. */
     void refresh();
     void setSelectedBand (int band);
+    /** Re-reads the theme colours it holds. */
+    void themeChanged();
     std::function<void (int)> onSelectBand;
 
     void paint (juce::Graphics&) override;

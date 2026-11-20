@@ -29,7 +29,7 @@ private:
     OpenFilterProcessor& processor;
     ResponseDisplay& display;
     juce::TextButton sourceButton { "Capture this track" }, sidechainButton { "Capture sidechain" },
-                     fileButton { "Reference file..." }, applyButton { "Apply" }, closeButton { "Close" };
+                     fileButton { "Reference file..." }, instanceButton { "From instance..." }, applyButton { "Apply" }, closeButton { "Close" };
     juce::ComboBox bandsBox;
     std::unique_ptr<juce::FileChooser> chooser;
     fit::Curve source {}, reference {};

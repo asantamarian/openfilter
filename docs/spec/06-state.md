@@ -101,6 +101,14 @@ notifications.
 
 ## 6. Themes
 
+**Built:** three themes in code (Nocturne, High contrast, Daylight) and JSON theme
+files as described below, chosen from View > Theme. The tokens are plain variables
+that a theme overwrites; components that cache colours are told to re-read them.
+The choice is user-wide, stored in `OpenFilter/EQ/settings.json`, and shared by
+every instance in the process. "Save the current colours as a theme file" writes a
+starting point to edit. **Not built:** the `spectrogramRamp` key, the contrast
+check with its warning badge, and live reload when a file changes.
+
 JSON, extension `.oftheme`, in `.../OpenFilter/Themes/`. Keys are the token names
 from 05 §2 plus `spectrogramRamp` (array of 2 to 16 colour stops). Missing keys
 fall back to Nocturne. A theme that fails the 4.5:1 text contrast check loads with

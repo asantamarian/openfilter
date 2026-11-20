@@ -36,11 +36,13 @@ Milestone M1 (static EQ, zero latency) is built and M2 (full UI) is under way. B
 | Full-screen mode | Not yet |
 | EQ match (reference from the sidechain or an audio file) and curve sketching, on a shared curve fitter; sidechain trace in the analyzer | Built (M6) |
 | Instance hub: other instances in the same process drawn over the display, with collision strips | Built (M6) |
-| Editing another instance from this window; instances in other processes; matching to another instance | Not yet |
+| EQ match with another instance as the reference | Built |
+| Editing another instance from this window; instances in other processes | Not yet |
 | Accessibility: dials are keyboard-operable sliders for screen readers, Tab steps through bands, selections are announced, focus is visible | Built (M7), not tested with a screen reader |
 | MIDI learn: right-click a dial, move a controller; mappings are saved with the session | Built (M7) |
 | CLAP build, with a minimal CLAP host test | Built (M7) |
-| Theme files, installers, manual (M7) | Not yet |
+| Themes: Nocturne, High contrast and Daylight built in, plus JSON theme files (M7) | Built |
+| Installers (M7) | Not yet |
 
 Known gaps:
 

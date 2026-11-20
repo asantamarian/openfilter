@@ -619,7 +619,7 @@ void ResponseDisplay::paint (juce::Graphics& g)
         g.strokePath (compositePath, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
         // Faint scanlines over the plot.
-        g.setColour (juce::Colours::black.withAlpha (0.13f));
+        g.setColour (juce::Colours::black.withAlpha (theme::isLight() ? 0.035f : 0.13f));
         for (int y = 0; y < getHeight() - kAxisHeight; y += 3)
             g.fillRect (0, y, getWidth(), 1);
     }
