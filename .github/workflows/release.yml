@@ -1,0 +1,121 @@
+name: release
+
+# Builds the plugin on Linux, Windows and macOS and attaches the packages to a GitHub release.
+# Runs when a version tag is pushed, or by hand for an existing tag.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and attach packages to (for example v0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  # An older Linux than a developer machine, so the package loads on more systems.
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+          submodules: recursive
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build xvfb g++-12 libasound2-dev libjack-jackd2-dev libfreetype6-dev \
+            libfontconfig1-dev libx11-dev libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev \
+            libxrandr-dev libxrender-dev libglu1-mesa-dev mesa-common-dev
+      - name: Build
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++-12 -DOF_INSTALL_AFTER_BUILD=OFF
+          cmake --build build
+      - name: Test
+        run: cd build && xvfb-run -a ctest --output-on-failure
+      - name: Package
+        run: |
+          VERSION="${TAG#v}"
+          NAME="openfilter-eq-${VERSION}-linux-x86_64-ubuntu22"
+          A=build/OpenFilterEQ_artefacts/Release
+          mkdir -p "$NAME/licenses"
+          cp -r "$A/VST3" "$A/CLAP" "$A/LV2" "$A/Standalone" "$NAME/"
+          cp LICENSE docs/manual.md "$NAME/"
+          cp assets/fonts/*-OFL.txt "$NAME/licenses/"
+          tar -czf "$NAME.tar.gz" "$NAME"
+          echo "PACKAGE=$NAME.tar.gz" >> "$GITHUB_ENV"
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" "$PACKAGE" --clobber
+
+  # Windows has never been built: this job finds out what breaks. It skips the tests that
+  # need a display or POSIX and runs the DSP unit tests only.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+          submodules: recursive
+      - name: Build
+        run: |
+          cmake -S . -B build -DOF_INSTALL_AFTER_BUILD=OFF
+          cmake --build build --config Release
+      - name: Unit tests
+        run: cd build && ctest -C Release -R of_tests --output-on-failure
+      - name: Package
+        shell: bash
+        run: |
+          VERSION="${TAG#v}"
+          NAME="openfilter-eq-${VERSION}-windows-x64"
+          A=build/OpenFilterEQ_artefacts/Release
+          mkdir -p "$NAME/licenses"
+          cp -r "$A/VST3" "$A/CLAP" "$A/Standalone" "$NAME/"
+          cp LICENSE docs/manual.md "$NAME/"
+          cp assets/fonts/*-OFL.txt "$NAME/licenses/"
+          7z a "$NAME.zip" "$NAME"
+          echo "PACKAGE=$NAME.zip" >> "$GITHUB_ENV"
+      - name: Attach to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" "$PACKAGE" --clobber
+
+  # macOS has never been built either. Universal (Apple silicon and Intel). The result is
+  # not signed or notarised, so macOS will warn about it until that is set up.
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+          submodules: recursive
+      - name: Build
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64" -DOF_INSTALL_AFTER_BUILD=OFF
+          cmake --build build
+      - name: Unit tests
+        run: cd build && ctest -R of_tests --output-on-failure
+      - name: Package
+        run: |
+          VERSION="${TAG#v}"
+          NAME="openfilter-eq-${VERSION}-macos-universal"
+          A=build/OpenFilterEQ_artefacts/Release
+          mkdir -p "$NAME/licenses"
+          for format in VST3 AU CLAP LV2 Standalone; do
+            if [ -d "$A/$format" ]; then cp -R "$A/$format" "$NAME/"; fi
+          done
+          cp LICENSE docs/manual.md "$NAME/"
+          cp assets/fonts/*-OFL.txt "$NAME/licenses/"
+          ditto -c -k --keepParent "$NAME" "$NAME.zip"
+          echo "PACKAGE=$NAME.zip" >> "$GITHUB_ENV"
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" "$PACKAGE" --clobber
