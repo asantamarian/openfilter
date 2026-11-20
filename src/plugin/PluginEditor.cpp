@@ -5,7 +5,7 @@ namespace of
 {
 namespace
 {
-constexpr int kTopBarHeight = 52, kDockHeight = 168, kOutputWidth = 76;
+constexpr int kTopBarHeight = 52, kDockHeight = 168, kOutputWidth = 76, kStatusHeight = 30;
 
 void applyTheme (juce::LookAndFeel_V4& look)
 {
@@ -90,6 +90,38 @@ OpenFilterEditor::OpenFilterEditor (OpenFilterProcessor& p)
     for (auto* b : { &presetButton, &undoButton, &redoButton, &bypassButton, &deltaButton })
         addAndMakeVisible (*b);
 
+    // Status bar, as in the mockup: MIDI learn, latency, a hint, and three settings that a
+    // click steps through.
+    midiLearnButton.setClickingTogglesState (true);
+    midiLearnButton.setTooltip ("MIDI learn mode: while on, click a dial and then move a control on your controller to link them. Right-click a dial to clear its link.");
+    midiLearnButton.onClick = [this]
+    {
+        processor.setMidiLearnMode (midiLearnButton.getToggleState());
+        repaint();
+    };
+    rangeLink.setTooltip ("Gain range of the display. Click to step through 3, 6, 12 and 30 dB.");
+    rangeLink.onClick = [this]
+    {
+        const int now = juce::roundToInt (processor.displayRangeDb);
+        processor.displayRangeDb = now <= 3 ? 6.0 : now <= 6 ? 12.0 : now <= 12 ? 30.0 : 3.0;
+        applyViewSettings();
+    };
+    tiltLink.setTooltip ("Tilt of the analyzer, so typical material looks level. Click to step through none, 3 and 4.5 dB per octave.");
+    tiltLink.onClick = [this]
+    {
+        processor.analyzerTilt = processor.analyzerTilt < 0.1f ? 3.0f : processor.analyzerTilt < 3.1f ? 4.5f : 0.0f;
+        applyViewSettings();
+    };
+    scaleLink.setTooltip ("Size of the interface. Click to step through 75, 100, 125, 150 and 200 %.");
+    scaleLink.onClick = [this]
+    {
+        const int now = juce::roundToInt (processor.uiScale * 100.0f);
+        processor.uiScale = now < 100 ? 1.0f : now < 125 ? 1.25f : now < 150 ? 1.5f : now < 200 ? 2.0f : 0.75f;
+        applyViewSettings();
+    };
+    for (auto* c : std::initializer_list<juce::Component*> { &midiLearnButton, &rangeLink, &tiltLink, &scaleLink })
+        addAndMakeVisible (*c);
+
     viewButton.onClick = [this] { showViewMenu(); };
     addAndMakeVisible (viewButton);
     for (int i = 0; i < OpenFilterProcessor::kNumSlots; ++i)
@@ -131,6 +163,7 @@ OpenFilterEditor::OpenFilterEditor (OpenFilterProcessor& p)
 
 OpenFilterEditor::~OpenFilterEditor()
 {
+    processor.setMidiLearnMode (false);   // learn mode belongs to the open window
     stopTimer();
     setLookAndFeel (nullptr);
 }
@@ -142,7 +175,24 @@ void OpenFilterEditor::resized()
 
     auto area = getLocalBounds();
     topBar = area.removeFromTop (kTopBarHeight);
+    statusBar = area.removeFromBottom (kStatusHeight);
     dock.setBounds (area.removeFromBottom (kDockHeight));
+
+    // Status bar: MIDI learn and latency on the left, the three settings on the right, and
+    // the hint in whatever is left between them.
+    {
+        updateStatusBar();
+        auto bar = statusBar.reduced (16, 4);
+        midiLearnButton.setBounds (bar.removeFromLeft (82));
+        bar.removeFromLeft (16);
+        statusLatency = bar.removeFromLeft (150);
+        scaleLink.setBounds (bar.removeFromRight (scaleLink.preferredWidth()));
+        bar.removeFromRight (14);
+        tiltLink.setBounds (bar.removeFromRight (tiltLink.preferredWidth()));
+        bar.removeFromRight (14);
+        rangeLink.setBounds (bar.removeFromRight (rangeLink.preferredWidth()));
+        statusHint = bar.reduced (12, 0);
+    }
     outputColumn = area.removeFromRight (kOutputWidth);
     display.setBounds (area);
     matchPanel.setBounds (area.withTrimmedLeft (16).withTrimmedRight (60).withY (area.getY() + 12).withHeight (94).withWidth (juce::jmin (760, area.getWidth() - 76)));
@@ -170,8 +220,7 @@ void OpenFilterEditor::resized()
         qualityBox.setBounds (right.removeFromRight (medium ? 104 : 86));
         right.removeFromRight (6);
     }
-    latencyArea = wide ? right.removeFromRight (78) : juce::Rectangle<int>();
-    right.removeFromRight (wide ? 10 : 0);
+    latencyArea = {};   // the latency is in the status bar now
     autoBox.setBounds (right.removeFromRight (medium ? 112 : 100));
     autoArea = wide ? right.removeFromRight (58) : juce::Rectangle<int>();
 
@@ -267,6 +316,26 @@ void OpenFilterEditor::paint (juce::Graphics& g)
         g.drawText (params::formatGain (shownAuto), autoArea, juce::Justification::centredRight, false);
     }
 
+    // Status bar.
+    g.setColour (theme::ground);
+    g.fillRect (statusBar);
+    g.setColour (theme::line);
+    g.fillRect (statusBar.withHeight (1));
+    g.setFont (theme::ui (11.0f));
+    g.setColour (theme::textMuted);
+    g.drawText ("Latency", statusLatency, juce::Justification::centredLeft, false);
+    g.setFont (theme::mono (11.0f));
+    g.setColour (theme::text);
+    g.drawText (juce::String (processor.getLatencySamples()) + " samples", statusLatency.withTrimmedLeft (50), juce::Justification::centredLeft, false);
+    if (statusHint.getWidth() > 300)
+    {
+        g.setFont (theme::ui (11.0f));
+        g.setColour (processor.midiLearnMode() ? theme::warn : theme::textMuted);
+        g.drawText (processor.midiLearnMode() ? "MIDI learn: click a dial, then move a control on your controller."
+                                              : "Drag a band to move it. Scroll to change Q. Double-click the display to add a band.",
+                    statusHint, juce::Justification::centred, true);
+    }
+
     // Output column.
     g.setColour (theme::panel);
     g.fillRect (outputColumn);
@@ -312,8 +381,18 @@ void OpenFilterEditor::paintMeter (juce::Graphics& g)
     }
 }
 
+void OpenFilterEditor::updateStatusBar()
+{
+    rangeLink.setValueText (juce::String::fromUTF8 ("\xc2\xb1") + juce::String (juce::roundToInt (processor.displayRangeDb)) + " dB");
+    tiltLink.setValueText (processor.analyzerTilt < 0.1f ? juce::String ("off") : juce::String (processor.analyzerTilt, 1) + " dB/oct");
+    scaleLink.setValueText (juce::String (juce::roundToInt (processor.uiScale * 100.0f)) + "%");
+}
+
 void OpenFilterEditor::applyViewSettings()
 {
+    updateStatusBar();
+    if (! statusBar.isEmpty())
+        resized();   // the links change width with their values
     display.setRangeDb (processor.displayRangeDb);
     display.setAnalyzerVisible (processor.analyzerOn);
     constexpr float speeds[] = { 6.0f, 12.0f, 24.0f, 48.0f };
@@ -560,8 +639,10 @@ void OpenFilterEditor::timerCallback()
     if (processor.getLatencySamples() != shownLatency)
     {
         shownLatency = processor.getLatencySamples();
-        repaint (latencyArea);
+        repaint (statusBar);
     }
+    if (midiLearnButton.getToggleState() != processor.midiLearnMode())
+        midiLearnButton.setToggleState (processor.midiLearnMode(), juce::dontSendNotification);
 
     const auto presetText = processor.presetName.isEmpty() ? juce::String ("Presets") : processor.presetName;
     if (presetButton.getButtonText() != presetText)

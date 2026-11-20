@@ -16,6 +16,8 @@ struct MidiLearnTarget
     /** The controller number mapped to the parameter, or -1. */
     virtual int mappedController (const juce::RangedAudioParameter&) const = 0;
     virtual void clearMidiMapping (juce::RangedAudioParameter&) = 0;
+    /** While on, a plain click on a control arms it for learning instead of moving it. */
+    virtual bool midiLearnMode() const = 0;
 };
 
 /** A 270 degree arc dial bound to one parameter (docs/spec/05-ui.md section 5).

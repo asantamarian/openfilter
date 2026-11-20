@@ -33,6 +33,7 @@ private:
     void showPresetMenu();
     void showViewMenu();
     void applyViewSettings();
+    void updateStatusBar();
 public:
     /** Re-reads the theme after it changed. */
     void themeChanged();
@@ -62,7 +63,9 @@ private:
     std::unique_ptr<juce::FileChooser> chooser;
     juce::TextButton undoButton { "Undo" }, redoButton { "Redo" }, bypassButton { "Bypass" }, deltaButton { "Delta" };
     juce::AudioProcessorValueTreeState::ButtonAttachment bypassAttachment, deltaAttachment;
-    juce::Rectangle<int> topBar, outputColumn, meterArea;
+    juce::Rectangle<int> topBar, outputColumn, meterArea, statusBar, statusHint, statusLatency;
+    juce::TextButton midiLearnButton { "MIDI learn" };
+    TextLink rangeLink { "Range" }, tiltLink { "Tilt" }, scaleLink { "Scale" };
     float meterDb[2] { -100.0f, -100.0f }, heldDb = -100.0f;
     int holdTicks = 0;
 

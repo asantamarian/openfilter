@@ -89,6 +89,8 @@ public:
     bool isLearning (const juce::RangedAudioParameter&) const override;
     int mappedController (const juce::RangedAudioParameter&) const override;
     void clearMidiMapping (juce::RangedAudioParameter&) override;
+    bool midiLearnMode() const override { return learnModeOn; }
+    void setMidiLearnMode (bool on) { learnModeOn = on; if (! on) cancelMidiLearn(); }
     /** Applies controller values received since the last call (what the timer does). For tools. */
     void applyPendingMidi() { timerCallback(); }
 
@@ -131,6 +133,7 @@ private:
     std::array<std::atomic<int>, 128> ccPending;     // controller -> last value seen (0..127), or -1
     std::atomic<int> learnParam { -1 };              // parameter index waiting for a controller
     std::atomic<bool> midiActivity { false };
+    bool learnModeOn = false;   // message thread only; never saved
     std::vector<float> captureValues() const;
     void applyValues (const std::vector<float>&);
     template <typename Sample> void process (juce::AudioBuffer<Sample>&);

@@ -1,12 +1,14 @@
 #pragma once
 
 #include "Dial.h"
+#include "Segmented.h"
 #include "plugin/PluginProcessor.h"
 
 namespace of
 {
-/** The docked controls of the selected band (docs/spec/05-ui.md section 5): band chips,
-    shape, slope, placement and the filter dials. Dynamics controls arrive with M3. */
+/** The docked controls of the selected band (docs/spec/05-ui.md section 5), laid out as in
+    the design mockup: band chips with solo, bypass and delete; an icon shape picker with
+    slope and channel; the filter dials; and the dynamics mode with its dials. */
 class BandDock final : public juce::Component
 {
 public:
@@ -20,8 +22,9 @@ public:
 
     std::function<void (int)> onSelectBand;
     /** Returns the bands currently selected in the display. When there are several, turning a
-        dial or picking from a list in the dock changes all of them: frequencies, Q, ratio and
-        times by the same ratio; gain, range and threshold by the same amount; lists outright. */
+        dial or picking a shape, slope, channel or mode in the dock changes all of them:
+        frequencies, Q, ratio and times by the same ratio; gain, range and threshold by the
+        same amount; picks outright. */
     std::function<std::vector<int>()> selection;
 
     void paint (juce::Graphics&) override;
@@ -31,35 +34,41 @@ public:
     /** For tools and tests. */
     Dial& frequencyDial() noexcept { return freqDial; }
     Dial& gainDialForTests() noexcept { return gainDial; }
+    void showPage (int newPage);
 
 private:
     using ComboAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
+    using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
 
-    juce::Rectangle<int> chipBounds (int index) const;
+    /** Chips shrink as bands are added, so all 32 always fit. */
+    struct ChipLayout { int w, h, gap, perRow; bool dots; };
+    ChipLayout chipLayout (int count) const noexcept;
+    juce::Rectangle<int> chipBounds (int index, const ChipLayout&) const;
+    int usedCount() const noexcept;
+
+    void applyToOthers (const char* suffix, float before, float after, bool byRatio);
+    void setOnOthers (const char* suffix, float plainValue);
 
     OpenFilterProcessor& processor;
     int band = -1;
     std::array<bool, kMaxBands> used {};
     BandParams current {};
 
-    juce::ComboBox shapeBox, slopeBox, placeBox, dynBox;
-    std::unique_ptr<ComboAttachment> shapeAttachment, slopeAttachment, placeAttachment, dynAttachment;
+    Segmented shapePicker, channelPicker, modePicker;
+    juce::ComboBox slopeBox;
+    std::unique_ptr<ComboAttachment> slopeAttachment;
     Dial freqDial { "Freq" }, gainDial { "Gain" }, qDial { "Q" };
-    Dial thrDial { "Thresh" }, rangeDial { "Range" }, ratioDial { "Ratio" }, atkDial { "Attack" }, relDial { "Release" };
-    juce::TextButton autoButton { "Auto" }, externalButton { "Ext SC" }, soloButton { "Solo" }, linearButton { "Lin" }, resonanceButton { "Reson" }, listenButton { "Key" };
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> resonanceAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> linearAttachment;
+    Dial thrDial { "Threshold" }, rangeDial { "Range" }, ratioDial { "Ratio" }, atkDial { "Attack" }, relDial { "Release" };
+    juce::TextButton soloButton { "Solo" }, listenButton { "Key" }, bypassButton { "Bypass" };
+    juce::TextButton autoButton { "Auto" }, externalButton { "Ext SC" }, resonanceButton { "Reson" }, linearButton { "Lin" }, pageButton;
+    IconButton deleteButton { "Delete band", "M2 3.5h9M5 3.5V2h3v1.5M3.2 3.5l.5 7.5h5.6l.5-7.5" };
+    std::unique_ptr<ButtonAttachment> autoAttachment, linearAttachment, resonanceAttachment;
+
+    juce::Rectangle<int> chipsArea, shapeArea, filterArea, dynArea, addChip, liveArea;
     bool mixedMode = false, rebinding = false;
-    void applyToOthers (const char* suffix, float before, float after, bool byRatio);
-    void setOnOthers (const char* suffix, float plainValue);
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoAttachment;
-    juce::Rectangle<int> dynArea;
-    float liveDyn = 0.0f;
-    juce::TextButton pageButton;
     bool paged = false, filterShown = true, dynamicsShown = true;
     int page = 0;
-    juce::TextButton bypassButton { "Bypass" }, deleteButton { "Delete" };
-    juce::Rectangle<int> chipsArea, shapeArea, dialsArea;
+    float liveDyn = 0.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BandDock)
 };

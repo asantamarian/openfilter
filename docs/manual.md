@@ -50,7 +50,8 @@ Only Linux has been built and tested so far.
 | Top bar | Undo, redo, presets, A/B/C/D slots, auto gain, phase mode, View menu, Delta, Bypass |
 | Display | The response curve, the bands, and the analyzer behind them |
 | Output column | Level meter, output gain, gain scale, balance, polarity |
-| Dock | The selected band's controls |
+| Dock | The selected band's controls: band chips, shape picker, slope, channel, filter dials, dynamics |
+| Status bar | MIDI learn, latency, a hint, and Range, Tilt and Scale, each of which a click steps through |
 
 The window can be resized by its corner, down to 800 by 560. Below about 1180
 pixels wide the dock splits into a **Filter** page and a **Dynamics** page (button
@@ -61,7 +62,7 @@ Most things that are not on the surface are in the **View** menu.
 
 ## 3. Working with bands
 
-**Add** a band by double-clicking the display. Where you click chooses the shape:
+**Add** a band by double-clicking the display, or with the **+** chip in the dock. Where you click chooses the shape:
 far left a low cut, left a low shelf, far right a high cut, right a high shelf,
 anywhere else a bell.
 
@@ -281,8 +282,9 @@ can be pasted into another instance.
 
 ## 14. MIDI learn
 
-Right-click a dial, choose **Learn MIDI controller**, and move a control on your
-hardware. The dial's caption then shows the controller number. The same menu clears
+Turn on **MIDI learn** in the status bar, click a dial, and move a control on your
+hardware; turn it off when you are done. Or right-click a dial and choose **Learn
+MIDI controller**. The dial's caption then shows the controller number. The same menu clears
 it. Mappings are saved with the session.
 
 One controller drives one parameter, with absolute values. Only dials can learn.

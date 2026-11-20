@@ -242,6 +242,13 @@ void Dial::mouseDown (const juce::MouseEvent& e)
         showContextMenu();
         return;
     }
+    if (midiLearn != nullptr && midiLearn->midiLearnMode())   // MIDI learn mode: a click arms this dial
+    {
+        if (midiLearn->isLearning (*param)) midiLearn->cancelMidiLearn();
+        else                                midiLearn->beginMidiLearn (*param);
+        repaint();
+        return;
+    }
     if (valueArea().contains (e.getPosition()))   // click the value to type one
     {
         showValueEditor();
