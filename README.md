@@ -1,67 +1,75 @@
 # OpenFilter EQ
 
-A dynamic, spectral, phase-flexible parametric equalizer plugin built with JUCE.
-Feature target: parity with the leading commercial "pro" EQ (FabFilter Pro-Q is the
-reference), plus the improvements listed in `docs/spec/00-product.md`.
+An open-source equalizer plugin with up to 32 bands. Each band can be static,
+dynamic or spectral, can sit on stereo, left, right, mid or side, and can be
+minimum phase or linear phase.
 
-The look, name, code and presets are original. Nothing is copied from the reference
-product; it is used only as a feature benchmark.
+![OpenFilter EQ](docs/images/main.png)
 
-## Status
+VST3, CLAP, LV2 and standalone. Built with JUCE. Licence: AGPL-3.0-or-later.
 
-Milestone M1 (static EQ, zero latency) is built and M2 (full UI) is under way. Build order is in
-`docs/spec/07-build-test-release.md`.
+**Status: 0.1, a first public build.** It has been built and tested on Linux only,
+and nobody has yet tuned it by ear. See [Known limits](#known-limits).
 
-| Part | State |
+## Features
+
+- **32 bands**, ten shapes: bell, low and high shelf, low and high cut, notch, band
+  pass, tilt shelf, flat tilt, all pass. Slopes from 6 to 96 dB/oct, and brickwall
+  cuts.
+- **Placement per band:** stereo, left, right, mid or side.
+- **Four phase modes:** zero latency, natural (follows the ideal curve to 20 kHz),
+  linear (five lengths) and mixed, where each band chooses.
+- **Dynamic bands:** threshold (manual, or automatic so the band reacts the same on
+  quiet and loud material), range, ratio, knee, attack, release, lookahead, an
+  external sidechain and a free detector filter.
+- **Spectral bands:** the gain is decided separately for every frequency inside the
+  band, so one ringing note can be turned down without its neighbours. A resonance
+  mode treats whatever sticks out, at any level.
+- **Analyzer:** input, output and sidechain, or a spectrogram; freeze, speed, tilt
+  and range.
+- **EQ match** to a sidechain, an audio file or another instance, and **curve
+  sketching**: draw a curve and get bands.
+- **Other instances** in the project drawn over your display, with strips marking
+  where two tracks collide.
+- **Auto gain** (estimated from the curve, or loudness matched), gain scale, delta
+  listening, and a character stage with tube and iron saturation.
+- **Workflow:** multi-band selection, a band table, typed values with note names
+  (`A4`, `C#3`), A/B/C/D slots, undo history, JSON presets, MIDI learn.
+- **Interface:** resizable from 800 x 560, scalable from 50 to 200 %, three themes
+  and your own as JSON, keyboard operation and screen-reader labels on the controls.
+
+How to use it all: [docs/manual.md](docs/manual.md).
+
+| Band table | Smallest window |
 |---|---|
-| Specs | Written; kept in step with what the tests show |
-| DSP core (`src/dsp`): prototypes, matched design, filter kernel, engine | Built, unit tests pass |
-| Plugin (`src/plugin`): 781 parameters, processor, session state | Built; VST3, CLAP, LV2 and Standalone on Linux |
-| Editor (`src/ui`): response display with draggable bands, band dock, output meter | Built, first version |
-| Spectrum analyzer (input and output), JSON presets, typed values with note names | Built (first part of M2) |
-| Natural phase mode: filters at 4x, accurate to 20 kHz, 76 samples of latency at 44.1/48 kHz | Built (brought forward from M4) |
-| Band table with editable cells, A/B/C/D slots, View menu (interface size, display range, analyzer on/off, undo history) | Built (M2) |
-| Dynamic bands with the internal detector: threshold (manual or auto), range, ratio, knee, attack, release, trigger above or below (M3) | Built |
-| External sidechain per band, band solo (button, or hold S in the display) | Built |
-| Lookahead (2, 5 or 10 ms), detector listen (Key button), free detector filter | Built |
-| Linear phase (five kernel lengths) and Mixed phase (per-band choice), designed on a worker thread (M4) | Built |
-| Dynamics for bands in the linear-phase path (up to 8, adding 2048 samples of latency) | Built |
-| Auto gain: estimated from the curve, or loudness matched (K-weighted, input against output) | Built (M5) |
-| Spectral bands: a gain per frequency inside the band, with absolute and resonance modes | Built (M5) |
-| Character: Tube and Iron saturation at 4x, with drive (first voicing, not yet tuned by ear) | Built (M5) |
-| Nine factory presets; analyzer speed, tilt, range and freeze; piano strip; number keys to select bands; copy, paste and duplicate bands | Built |
-| Multi-band selection (shift-click, rubber band, Ctrl/Cmd+A) with group drag, scroll, nudge, copy and delete; paged dock; minimum window 800 x 560 | Built |
-| Advanced panel: character and drive, free detector filter, knee, trigger, spectral resolution; dock edits apply to every selected band | Built |
-| Spectrogram view of the output (8 seconds, newest at the top); bundled fonts, so it looks the same on every machine | Built |
-| Full-screen mode | Not yet |
-| EQ match (reference from the sidechain or an audio file) and curve sketching, on a shared curve fitter; sidechain trace in the analyzer | Built (M6) |
-| Instance hub: other instances in the same process drawn over the display, with collision strips | Built (M6) |
-| EQ match with another instance as the reference | Built |
-| Editing another instance from this window; instances in other processes | Not yet |
-| Accessibility: dials are keyboard-operable sliders for screen readers, Tab steps through bands, selections are announced, focus is visible | Built (M7), not tested with a screen reader |
-| MIDI learn: right-click a dial, move a controller; mappings are saved with the session | Built (M7) |
-| CLAP build, with a minimal CLAP host test | Built (M7) |
-| Themes: Nocturne, High contrast and Daylight built in, plus JSON theme files (M7) | Built |
-| Installers (M7) | Not yet |
+| ![Band table](docs/images/table.png) | ![800 x 560](docs/images/small.png) |
 
-Known gaps:
+## Install
 
-- In Zero Latency mode the filters drift from the drawn curve in the top octave
-  (about 1 dB around 9 kHz and 2 dB around 15 kHz at 44.1/48 kHz). Natural mode fixes
-  this at the cost of latency and CPU. Figures: `docs/spec/03-dsp.md`, sections 3 and 5.
-- Tested on Linux only. Windows and macOS builds have not been tried.
-- Validated with our own host test and by hand in Reaper, not yet with pluginval.
-- The DSP core is clean under address, undefined-behaviour and thread sanitizers; the
-  plugin and editor code has not been run under one. CPU figures are in
-  `docs/spec/07-build-test-release.md`, section 5.
-- The LV2 editor has not been exercised (the headless host test cannot embed it).
-- In LV2 the sidechain input is a required port (a workaround for a crash in JUCE's
-  LV2 wrapper), so the plugin shows four inputs there.
+Download a release from the
+[releases page](https://github.com/asantamarian/openfilter/releases) and copy the
+plugin to your plugin folder, then rescan in your host.
 
-## Build and test
+| Format | Linux | Windows | macOS |
+|---|---|---|---|
+| VST3 | `~/.vst3/` | `C:\Program Files\Common Files\VST3\` | `~/Library/Audio/Plug-Ins/VST3/` |
+| CLAP | `~/.clap/` | `C:\Program Files\Common Files\CLAP\` | `~/Library/Audio/Plug-Ins/CLAP/` |
+| LV2 | `~/.lv2/` | | `~/Library/Audio/Plug-Ins/LV2/` |
+| AU | | | `~/Library/Audio/Plug-Ins/Components/` |
+
+Only the Linux build exists so far. Windows and macOS builds are set up to be made
+by GitHub Actions but have not been produced or tried yet.
+
+The Linux release is built on a current rolling distribution, so it needs a recent
+C library and may not start on older long-term-support systems. Building from
+source avoids that.
+
+## Build from source
+
+Requirements: CMake 3.22 or later, Ninja, a C++20 compiler.
 
 Linux packages (Arch names): `alsa-lib freetype2 fontconfig libx11 libxrandr
-libxinerama libxcursor libxext mesa`, plus `cmake` and `ninja`.
+libxinerama libxcursor libxext mesa`.
 
 ```
 git clone --recurse-submodules https://github.com/asantamarian/openfilter.git
@@ -71,41 +79,92 @@ cmake --build build
 cd build && ctest
 ```
 
-`ctest` runs four things: the DSP unit tests, a host test that loads the built VST3
-and LV2 the way a DAW does, a minimal CLAP host that does the same for the CLAP, and a
-tool that renders the editor to `build/editor.png` and checks state, presets, slots,
-EQ match, the instance hub and MIDI learn.
+The plugins are written to `build/OpenFilterEQ_artefacts/Release/`, and on Linux the
+build also copies them to `~/.vst3/`, `~/.clap/` and `~/.lv2/`. Pass
+`-DOF_INSTALL_AFTER_BUILD=OFF` to turn that off.
 
-The plugins are in `build/OpenFilterEQ_artefacts/Release/`, and the build also copies
-them to your user plugin folders (`~/.vst3/`, `~/.clap/` and `~/.lv2/` on Linux), so a rescan in
-your DAW picks up the new version. Pass `-DOF_INSTALL_AFTER_BUILD=OFF` to turn that
-off. The `Standalone/OpenFilter EQ` binary runs on its own.
+| Option | Default | Meaning |
+|---|---|---|
+| `OF_BUILD_PLUGIN` | ON | Build the plugin (needs the JUCE submodule) |
+| `OF_BUILD_CLAP` | ON | Build the CLAP format |
+| `OF_BUILD_TESTS` | ON | Build the tests and tools |
+| `OF_BUILD_AAX` | OFF | Build AAX (needs the Avid SDK at `AAX_SDK_PATH`) |
+| `OF_INSTALL_AFTER_BUILD` | ON | Copy the plugins to the user plugin folders |
 
-Licence: AGPL-3.0-or-later (see `LICENSE`), as required by the open-source JUCE licence.
-The bundled fonts, Inter and JetBrains Mono, are under the SIL Open Font License; their
-licence texts are in `assets/fonts/`.
+## Tests
 
-## Manual
+`ctest` runs four things:
 
-`docs/manual.md` explains how to use the plugin.
+| Test | What it does |
+|---|---|
+| `of_tests` | 50 unit test cases for the DSP: filter design, kernel, engine, natural, linear, dynamics, spectral, character, curve fitting |
+| `of_host_test` | Loads the built VST3 and LV2 the way a host does: transparency, gain, latency in every mode, parameter storms, state, sidechain, mono |
+| `of_clap_test` | A minimal CLAP host doing the same for the CLAP |
+| `of_snapshot` | Renders the editor to `build/editor*.png` and checks state, presets, slots, EQ match, the instance hub, MIDI learn, multi-selection and themes |
 
-## Specs
+`./build/of_bench` measures CPU cost. The DSP core is also run under address,
+undefined-behaviour and thread sanitizers; the commands are in
+[docs/spec/07-build-test-release.md](docs/spec/07-build-test-release.md).
+
+## CPU
+
+The processing alone, 48 kHz, 512-sample blocks, stereo, as a share of one core of
+a desktop processor:
+
+| Situation | CPU |
+|---|---|
+| 8 static bells | 0.35 % |
+| 24 mixed bands | 0.9 % |
+| 24 bands, natural | 4.3 % |
+| 24 bands, linear, medium | 1.0 % |
+| 8 dynamic bands | 0.7 % |
+| 4 spectral bands | 2.3 % |
+
+## Known limits
+
+- **Linux only so far.** Windows and macOS have never been built.
+- **Not tuned by ear.** The dynamics defaults, the spectral processing and the
+  saturation voicing pass their tests but have not been judged on real material.
+- **Zero latency drifts in the top octave** at 44.1/48 kHz: about 1 dB around 9 kHz
+  and 2 dB around 15 kHz against the drawn curve. Natural and linear modes do not.
+- **Not validated with pluginval**, and only loaded by hand in Reaper.
+- **Not tested:** a screen reader, hardware MIDI controllers, the LV2 editor in a
+  real host.
+- **Other instances** are visible only when the host runs them in the same process,
+  and cannot be edited from another window.
+- **In LV2 the sidechain is a required input**, so the plugin shows four inputs
+  there (a workaround for a crash in JUCE's LV2 wrapper).
+- No full-screen mode, no surround.
+
+## Documentation
 
 | File | Contents |
 |---|---|
-| `docs/spec/00-product.md` | Scope, feature matrix against the reference, improvements, non-goals |
-| `docs/spec/01-architecture.md` | Repo layout, modules, threads, signal flow, latency |
-| `docs/spec/02-parameters.md` | Every automatable parameter: ID, range, mapping, default |
-| `docs/spec/03-dsp.md` | Filter design, kernels, phase modes, dynamics, spectral, auto gain |
-| `docs/spec/04-analysis.md` | Analyzer, instance hub, collision view, EQ match, sketch |
-| `docs/spec/05-ui.md` | Tokens, layout, components, interaction, keyboard, accessibility |
-| `docs/spec/06-state.md` | State format, presets, undo, A/B/C/D, MIDI learn, migration |
-| `docs/spec/07-build-test-release.md` | CMake, formats, tests, CI, milestones |
+| [docs/manual.md](docs/manual.md) | User manual |
+| [docs/spec/00-product.md](docs/spec/00-product.md) | Scope and feature list |
+| [docs/spec/01-architecture.md](docs/spec/01-architecture.md) | Layout, threads, signal flow, latency |
+| [docs/spec/02-parameters.md](docs/spec/02-parameters.md) | Every parameter |
+| [docs/spec/03-dsp.md](docs/spec/03-dsp.md) | Filter design, phase modes, dynamics, spectral, with measured accuracy |
+| [docs/spec/04-analysis.md](docs/spec/04-analysis.md) | Analyzer, instance hub, EQ match |
+| [docs/spec/05-ui.md](docs/spec/05-ui.md) | Interface |
+| [docs/spec/06-state.md](docs/spec/06-state.md) | State, presets, themes, MIDI |
+| [docs/spec/07-build-test-release.md](docs/spec/07-build-test-release.md) | Build, tests, benchmarks |
 
-## UI mockup
+The specs were written before the code and are kept in step with it: where the
+build differs from the plan, the spec says what was built and what was measured.
 
-Interactive mockup (drag the nodes, pick shapes, switch a band to Dynamic):
-https://claude.ai/artifact/Rgnk2WwKuTpHXttCVzhUoN
+## Licence and credits
 
-The mockup is the visual source of truth for `05-ui.md`. It is private to its owner
-until shared from the page's Share menu.
+OpenFilter EQ is free software under the GNU Affero General Public License,
+version 3 or later (see [LICENSE](LICENSE)).
+
+- [JUCE](https://juce.com), under its AGPLv3 option.
+- [clap-juce-extensions](https://github.com/free-audio/clap-juce-extensions) and
+  [CLAP](https://github.com/free-audio/clap), MIT.
+- [Catch2](https://github.com/catchorg/Catch2), BSL-1.0, for the tests.
+- Fonts: [Inter](https://rsms.me/inter/) and
+  [JetBrains Mono](https://www.jetbrains.com/lp/mono/), SIL Open Font License;
+  licence texts in `assets/fonts/`.
+
+The feature set was planned against commercial equalizers as a benchmark. The
+code, interface, presets and name are original.
