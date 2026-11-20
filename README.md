@@ -8,8 +8,9 @@ minimum phase or linear phase.
 
 VST3, CLAP, LV2 and standalone. Built with JUCE. Licence: AGPL-3.0-or-later.
 
-**Status: 0.1, a first public build.** It has been built and tested on Linux only,
-and nobody has yet tuned it by ear. See [Known limits](#known-limits).
+**Status: 0.1, a first public build.** It is developed and tested on Linux. The
+Windows and macOS packages are built automatically and have not been tried in a
+host yet, and nobody has tuned the plugin by ear. See [Known limits](#known-limits).
 
 ## Features
 
@@ -57,12 +58,11 @@ plugin to your plugin folder, then rescan in your host.
 | LV2 | `~/.lv2/` | | `~/Library/Audio/Plug-Ins/LV2/` |
 | AU | | | `~/Library/Audio/Plug-Ins/Components/` |
 
-Only the Linux build exists so far. Windows and macOS builds are set up to be made
-by GitHub Actions but have not been produced or tried yet.
-
-The Linux release is built on a current rolling distribution, so it needs a recent
-C library and may not start on older long-term-support systems. Building from
-source avoids that.
+All three packages are built by GitHub Actions. The Linux one is built on Ubuntu
+22.04. The Windows and macOS ones compile and pass the DSP unit tests on those
+systems, but nobody has loaded them in a host yet. The macOS build is universal
+(Intel and Apple silicon) and is not signed or notarised, so macOS will warn
+about it.
 
 ## Build from source
 
@@ -122,7 +122,8 @@ a desktop processor:
 
 ## Known limits
 
-- **Linux only so far.** Windows and macOS have never been built.
+- **Tested on Linux only.** The Windows and macOS builds have not been loaded in a
+  host, and the macOS build is unsigned.
 - **Not tuned by ear.** The dynamics defaults, the spectral processing and the
   saturation voicing pass their tests but have not been judged on real material.
 - **Zero latency drifts in the top octave** at 44.1/48 kHz: about 1 dB around 9 kHz
