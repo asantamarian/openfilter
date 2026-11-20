@@ -164,9 +164,17 @@ if(OF_BUILD_TESTS)
     tests/unit/fit_tests.cpp)
   target_link_libraries(of_tests PRIVATE of_dsp Catch2::Catch2WithMain)
   add_test(NAME of_tests COMMAND of_tests)
+  # An Engine is about 0.5 MB and the tests keep several on the stack. Windows gives a
+  # thread 1 MB by default, where Linux and macOS give 8 MB.
+  if(MSVC)
+    target_link_options(of_tests PRIVATE /STACK:8388608)
+  endif()
 
   # CPU cost of the engine in typical situations: tests/bench/bench.cpp. Not part of ctest:
   # timings depend on the machine. Run ./of_bench, or ./of_bench --check against the budgets.
   add_executable(of_bench tests/bench/bench.cpp)
   target_link_libraries(of_bench PRIVATE of_dsp)
+  if(MSVC)
+    target_link_options(of_bench PRIVATE /STACK:8388608)
+  endif()
 endif()
