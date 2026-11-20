@@ -8,9 +8,15 @@ minimum phase or linear phase.
 
 VST3, CLAP, LV2 and standalone. Built with JUCE. Licence: AGPL-3.0-or-later.
 
-**Status: 0.1, a first public build.** It is developed and tested on Linux. The
+**Status: 0.1.1, an early version.** It is developed and tested on Linux. The
 Windows and macOS packages are built automatically and have not been tried in a
 host yet, and nobody has tuned the plugin by ear. See [Known limits](#known-limits).
+
+**Download 0.1.1:**
+[Linux](https://github.com/asantamarian/openfilter/releases/latest/download/openfilter-eq-0.1.1-linux-x86_64-ubuntu22.tar.gz) ·
+[Windows](https://github.com/asantamarian/openfilter/releases/latest/download/openfilter-eq-0.1.1-windows-x64.zip) ·
+[macOS](https://github.com/asantamarian/openfilter/releases/latest/download/openfilter-eq-0.1.1-macos-universal.zip) ·
+[all releases](https://github.com/asantamarian/openfilter/releases)
 
 ## Features
 
@@ -47,9 +53,9 @@ How to use it all: [docs/manual.md](docs/manual.md).
 
 ## Install
 
-Download a release from the
-[releases page](https://github.com/asantamarian/openfilter/releases) and copy the
-plugin to your plugin folder, then rescan in your host.
+Download the package for your system from the links above or the
+[releases page](https://github.com/asantamarian/openfilter/releases), unpack it,
+copy the plugin to your plugin folder, then rescan in your host.
 
 | Format | Linux | Windows | macOS |
 |---|---|---|---|
@@ -61,8 +67,9 @@ plugin to your plugin folder, then rescan in your host.
 All three packages are built by GitHub Actions. The Linux one is built on Ubuntu
 22.04. The Windows and macOS ones compile and pass the DSP unit tests on those
 systems, but nobody has loaded them in a host yet. The macOS build is universal
-(Intel and Apple silicon) and is not signed or notarised, so macOS will warn
-about it.
+(Intel and Apple silicon) and is not signed or notarised, so macOS will block it
+at first: after copying the plugins, run `xattr -dr com.apple.quarantine` on them,
+or allow them under System Settings, Privacy & Security.
 
 ## Build from source
 
