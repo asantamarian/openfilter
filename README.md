@@ -85,6 +85,10 @@ Licence: AGPL-3.0-or-later (see `LICENSE`), as required by the open-source JUCE 
 The bundled fonts, Inter and JetBrains Mono, are under the SIL Open Font License; their
 licence texts are in `assets/fonts/`.
 
+## Manual
+
+`docs/manual.md` explains how to use the plugin.
+
 ## Specs
 
 | File | Contents |
