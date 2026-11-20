@@ -90,7 +90,7 @@ jobs:
   # macOS has never been built either. Universal (Apple silicon and Intel). The result is
   # not signed or notarised, so macOS will warn about it until that is set up.
   macos:
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
         with:

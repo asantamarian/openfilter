@@ -442,7 +442,14 @@ int main (int argc, char** argv)
     {
         const auto file = juce::File::getCurrentWorkingDirectory().getChildFile (juce::String::fromUTF8 (argv[i]));
         if (file.hasFileExtension ("lv2"))
-            ::setenv ("LV2_PATH", file.getParentDirectory().getFullPathName().toRawUTF8(), 1);
+        {
+            const auto folder = file.getParentDirectory().getFullPathName();
+           #if JUCE_WINDOWS
+            _putenv_s ("LV2_PATH", folder.toRawUTF8());   // Windows has no setenv
+           #else
+            ::setenv ("LV2_PATH", folder.toRawUTF8(), 1);
+           #endif
+        }
     }
 
     juce::ScopedJuceInitialiser_GUI gui;
