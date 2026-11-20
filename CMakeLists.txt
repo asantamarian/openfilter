@@ -64,7 +64,7 @@ if(OF_BUILD_PLUGIN)
     VST3_CATEGORIES             Fx EQ
     AU_MAIN_TYPE                kAudioUnitType_Effect
     AAX_CATEGORY                AAX_ePlugInCategory_EQ
-    LV2URI                      "https://github.com/OWNER/openfilter/eq"   # placeholder: set before first release, permanent afterwards
+    LV2URI                      "https://github.com/asantamarian/openfilter/eq"   # permanent: LV2 hosts identify the plugin by it
     COPY_PLUGIN_AFTER_BUILD     ${OF_INSTALL_AFTER_BUILD})
 
   # Fonts (SIL Open Font License; the licence texts sit next to them in assets/fonts).
