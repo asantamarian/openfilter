@@ -44,6 +44,8 @@ public:
     /** speed in dB per second of release; tilt in dB per octave; range in dB below 0 dBFS. */
     void setAnalyzerOptions (float releasePerSecond, float tiltPerOctave, int rangeDb, bool frozen);
     void setPianoStrip (bool show);
+    /** Height at the bottom that another panel covers; the piano strip moves above it. */
+    void setCoveredBottom (int pixels);
     /** Spectrogram view: the output spectrum over the last 8 seconds, newest at the top, in
         place of the two traces. */
     void setSpectrogramView (bool show);
@@ -90,6 +92,9 @@ private:
     double yToDb (float y) const noexcept;
     juce::Point<float> nodePosition (const BandParams&) const noexcept;
     int bandAt (juce::Point<float>) const noexcept;
+    /** Picks up band and scale changes. The analyzer advances only in refresh(), on the
+        editor's timer, so pointer events do not make it run faster. */
+    void syncBands();
     void rebuildCurves();
     void rebuildSpectra();
     void showBandMenu (int band);
@@ -132,6 +137,7 @@ private:
     juce::uint32 lastUpdateMs = 0;
     bool spectraShown = false, analyzerVisible = true, analyzerFrozen = false, piano = false;
     float analyzerRange = 90.0f;
+    int coveredBottom = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ResponseDisplay)
 };

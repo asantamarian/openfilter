@@ -80,7 +80,7 @@ gain. Hold Shift for fine movement.
 |---|---|
 | Bypass a band | Alt-click it, or the Bypass button in the dock |
 | Delete | Delete key, or the Delete button |
-| Reset gain to 0 dB | Ctrl/Cmd + double-click the band |
+| Reset gain to 0 dB | Double-click the band |
 | Menu of shape, slope, channel | Right-click the band |
 | Solo | Solo button, or hold S |
 | Type a value | Click the number under a dial |
@@ -230,12 +230,19 @@ View menu, Spectrum analyzer:
 | Show, Freeze | |
 | View | Input and output traces, or a spectrogram of the output (8 seconds, newest at the top) |
 | Speed | Slow to very fast |
-| Tilt | None, 3 or 4.5 dB per octave |
+| Tilt | None, 1.5, 3, 4.5 or 6 dB per octave, or any value from 0 to 6 with "other" |
 | Range | 60, 90 or 120 dB |
 
 **Piano strip** (View menu) shows note positions along the bottom of the display.
+With the band table open it sits just above the table.
 
-**Display range** (View menu) sets the gain axis to ±3, 6, 12 or 30 dB.
+The analyzer has its own level scale, labelled in dBFS down the left edge: 0 at the
+top and the chosen range at the bottom. With a tilt the labels hold at 1 kHz. Turn
+the tilt off to compare slopes with an analyzer that has none, such as the ones in
+most hosts.
+
+**Display range** (View menu, or Range in the status bar) sets the gain axis on the
+right to ±3, 6, 12 or 30 dB. It scales the EQ curve and the nodes, not the analyzer.
 
 ## 11. EQ match and sketch
 

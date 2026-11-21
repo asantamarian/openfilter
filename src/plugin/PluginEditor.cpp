@@ -106,7 +106,7 @@ OpenFilterEditor::OpenFilterEditor (OpenFilterProcessor& p)
         processor.displayRangeDb = now <= 3 ? 6.0 : now <= 6 ? 12.0 : now <= 12 ? 30.0 : 3.0;
         applyViewSettings();
     };
-    tiltLink.setTooltip ("Tilt of the analyzer, so typical material looks level. Click to step through none, 3 and 4.5 dB per octave.");
+    tiltLink.setTooltip ("Tilt of the analyzer, so typical material looks level. Click to step through none, 3 and 4.5 dB per octave; View > Spectrum analyzer has more values and takes any from 0 to 6.");
     tiltLink.onClick = [this]
     {
         processor.analyzerTilt = processor.analyzerTilt < 0.1f ? 3.0f : processor.analyzerTilt < 3.1f ? 4.5f : 0.0f;
@@ -200,6 +200,7 @@ void OpenFilterEditor::resized()
     advancedPanel.setBounds (area.getX() + 16, area.getBottom() - 12 - 122, juce::jmin (648, area.getWidth() - 32), 122);
     // The band table covers the lower part of the display when open.
     table.setBounds (area.withTop (area.getBottom() - juce::jmin (area.getHeight() * 45 / 100, 26 * 12)));
+    display.setCoveredBottom (processor.tableOpen ? table.getHeight() : 0);
 
     // Top bar. As the window narrows it gives up, in this order: the latency readout and
     // the auto gain readout, the undo and redo buttons (still in View > History and on
@@ -400,6 +401,7 @@ void OpenFilterEditor::applyViewSettings()
     display.setPianoStrip (processor.pianoStrip);
     display.setSpectrogramView (processor.analyzerSpectrogram);
     table.setVisible (processor.tableOpen);
+    display.setCoveredBottom (processor.tableOpen ? table.getHeight() : 0);
     if (! juce::approximatelyEqual (processor.uiScale, static_cast<float> (getTransform().getScaleFactor())))
         setScaleFactor (processor.uiScale);
 }
@@ -451,9 +453,14 @@ void OpenFilterEditor::showViewMenu()
     for (int i = 0; i < 4; ++i)
         analyzer.addItem (7000 + i, speedNames[i], true, processor.analyzerSpeed == i);
     analyzer.addSeparator();
-    analyzer.addItem (7100, "Tilt: none", true, processor.analyzerTilt < 0.1f);
-    analyzer.addItem (7103, "Tilt: 3 dB/oct", true, std::abs (processor.analyzerTilt - 3.0f) < 0.1f);
-    analyzer.addItem (7145, "Tilt: 4.5 dB/oct", true, std::abs (processor.analyzerTilt - 4.5f) < 0.1f);
+    bool tiltListed = false;
+    for (int tenths : { 0, 15, 30, 45, 60 })
+    {
+        const bool ticked = std::abs (processor.analyzerTilt - static_cast<float> (tenths) / 10.0f) < 0.05f;
+        tiltListed = tiltListed || ticked;
+        analyzer.addItem (7100 + tenths, tenths == 0 ? juce::String ("Tilt: none") : "Tilt: " + juce::String (tenths / 10.0, 1) + " dB/oct", true, ticked);
+    }
+    analyzer.addItem (7199, tiltListed ? juce::String ("Tilt: other...") : "Tilt: " + juce::String (processor.analyzerTilt, 1) + " dB/oct (other...)", true, ! tiltListed);
     analyzer.addSeparator();
     for (int db : { 60, 90, 120 })
         analyzer.addItem (7200 + db, "Range: " + juce::String (db) + " dB", true, processor.analyzerRange == db);
@@ -531,6 +538,7 @@ void OpenFilterEditor::showViewMenu()
         else if (result == 4) proc.analyzerFrozen = ! proc.analyzerFrozen;
         else if (result >= 7300) proc.analyzerSpectrogram = result == 7301;
         else if (result >= 7200) proc.analyzerRange = result - 7200;
+        else if (result == 7199) { safe->askForTilt(); return; }
         else if (result >= 7100) proc.analyzerTilt = static_cast<float> (result - 7100) / 10.0f;
         else if (result >= 7000) proc.analyzerSpeed = result - 7000;
         else if (result >= 6000)
@@ -549,6 +557,26 @@ void OpenFilterEditor::showViewMenu()
         else if (result >= 1000) proc.uiScale = static_cast<float> (result - 1000) / 100.0f;
         safe->applyViewSettings();
     });
+}
+
+void OpenFilterEditor::askForTilt()
+{
+    auto* box = new juce::AlertWindow ("Analyzer tilt", "dB per octave around 1 kHz, from 0 to 6.", juce::MessageBoxIconType::NoIcon, this);
+    box->addTextEditor ("tilt", juce::String (processor.analyzerTilt, 1));
+    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    juce::Component::SafePointer<OpenFilterEditor> safe (this);
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([safe, box] (int result)
+    {
+        if (safe == nullptr || result != 1)
+            return;
+        const auto text = box->getTextEditorContents ("tilt").replaceCharacter (',', '.').retainCharacters ("0123456789.");
+        if (text.isEmpty())
+            return;
+        // A tenth of a dB per octave is as fine as the status bar shows.
+        safe->processor.analyzerTilt = std::round (juce::jlimit (0.0f, 6.0f, text.getFloatValue()) * 10.0f) / 10.0f;
+        safe->applyViewSettings();
+    }), true);
 }
 
 void OpenFilterEditor::showPresetMenu()

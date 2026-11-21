@@ -84,7 +84,7 @@ int ResponseDisplay::bandAt (juce::Point<float> p) const noexcept
 }
 
 //==============================================================================
-void ResponseDisplay::refresh()
+void ResponseDisplay::syncBands()
 {
     bool changed = false;
     const double newScale = processor.gainScale();
@@ -130,6 +130,11 @@ void ResponseDisplay::refresh()
     }
     if (dynMoved)
         repaint();
+}
+
+void ResponseDisplay::refresh()
+{
+    syncBands();
 
     // Analyzer: pull what the audio thread queued and redraw while anything is showing.
     const auto now = juce::Time::getMillisecondCounter();
@@ -389,6 +394,14 @@ void ResponseDisplay::setPianoStrip (bool show)
     repaint();
 }
 
+void ResponseDisplay::setCoveredBottom (int pixels)
+{
+    if (pixels == coveredBottom)
+        return;
+    coveredBottom = pixels;
+    repaint();
+}
+
 void ResponseDisplay::setAnalyzerVisible (bool visible)
 {
     analyzerVisible = visible;
@@ -514,8 +527,21 @@ void ResponseDisplay::paint (juce::Graphics& g)
     for (int i = -2; i <= 2; ++i)
     {
         const double db = i * rangeDb / 2.0;
-        g.drawText ((db > 0 ? "+" : "") + juce::String (juce::roundToInt (db)),
+        // Half of 3 dB is 1.5, which must not be labelled as 2.
+        const bool whole = std::abs (db - std::round (db)) < 0.01;
+        g.drawText ((db > 0 ? "+" : "") + (whole ? juce::String (juce::roundToInt (db)) : juce::String (db, 1)),
                     juce::Rectangle<float> (w - 44.0f, dbToY (db) - 7.0f, 36.0f, 14.0f), juce::Justification::centredRight, false);
+    }
+    // The analyzer has its own scale, in dBFS from 0 at the top to the chosen range at the
+    // bottom. It is labelled on the left so it is not read against the gain axis on the right.
+    // With a tilt the labels hold at 1 kHz, the frequency the tilt turns around.
+    if (analyzerVisible && ! spectrogramView)
+    {
+        g.setColour (theme::textFaint.withAlpha (0.6f));
+        const int stepDb = juce::roundToInt (analyzerRange / 6.0f);
+        for (int db = stepDb; db < juce::roundToInt (analyzerRange); db += stepDb)
+            g.drawText (juce::String (-db), juce::Rectangle<float> (8.0f, plotBottom * static_cast<float> (db) / analyzerRange - 7.0f, 36.0f, 14.0f),
+                        juce::Justification::centredLeft, false);
     }
 
     {
@@ -627,7 +653,8 @@ void ResponseDisplay::paint (juce::Graphics& g)
     // Piano strip: one key per semitone along the bottom of the plot, C notes labelled.
     if (piano)
     {
-        const float top = plotBottom - 14.0f;
+        // Above whatever covers the bottom of the plot (the band table), else along its edge.
+        const float top = (coveredBottom > 0 ? static_cast<float> (getHeight() - coveredBottom) : plotBottom) - 14.0f;
         g.setFont (theme::mono (9.0f));
         for (int note = 12; note <= 135; ++note)
         {
@@ -882,7 +909,7 @@ void ResponseDisplay::mouseDrag (const juce::MouseEvent& e)
         if (hasGain (from.shape))
             processor.setBandValue (i, "gain", static_cast<float> (juce::jlimit (-30.0, 30.0, from.gainDb + gainDelta)));
     }
-    refresh();
+    syncBands();
 }
 
 void ResponseDisplay::endDrag()
@@ -929,7 +956,7 @@ void ResponseDisplay::mouseUp (const juce::MouseEvent&)
         }
         sketchPoints.clear();
         sketchPath.clear();
-        refresh();
+        syncBands();
         repaint();
         return;
     }
@@ -960,10 +987,11 @@ void ResponseDisplay::mouseDoubleClick (const juce::MouseEvent& e)
     const int band = bandAt (e.position);
     if (band >= 0)
     {
-        if (e.mods.isCommandDown())   // reset gain
+        if (hasGain (bands[static_cast<size_t> (band)].shape))   // reset gain, as a double-click on the gain dial does
         {
             processor.undo.beginNewTransaction ("Reset gain");
             processor.setBandValue (band, "gain", 0.0f);
+            syncBands();
         }
         return;
     }
@@ -976,7 +1004,7 @@ void ResponseDisplay::mouseDoubleClick (const juce::MouseEvent& e)
                       : rel > 0.94f ? Shape::HighCut : rel > 0.84f ? Shape::HighShelf : Shape::Bell;
     const double s = std::abs (scale) > 1.0e-6 ? scale : 1.0;
     const int added = processor.addBand (shape, xToFreq (e.position.x), juce::jlimit (-30.0, 30.0, yToDb (e.position.y) / s));
-    refresh();
+    syncBands();
     if (added >= 0)
         selectBand (added);
 }
@@ -991,7 +1019,7 @@ void ResponseDisplay::mouseWheelMove (const juce::MouseEvent& e, const juce::Mou
     for (int i = 0; i < kMaxBands; ++i)
         if (i == band || (inSelection[static_cast<size_t> (band)] && inSelection[static_cast<size_t> (i)]))
             processor.setBandValue (i, "q", static_cast<float> (juce::jlimit (0.025, 40.0, bands[static_cast<size_t> (i)].q * factor)));
-    refresh();
+    syncBands();
 }
 
 bool ResponseDisplay::keyStateChanged (bool)
@@ -1059,7 +1087,7 @@ bool ResponseDisplay::keyPressed (const juce::KeyPress& key)
             int last = -1;
             for (const auto& item : *parsed.getArray())
                 last = juce::jmax (last, presets::addBandFromVar (processor, item));
-            refresh();
+            syncBands();
             if (last >= 0)
                 selectBand (last);
         }
@@ -1101,7 +1129,7 @@ bool ResponseDisplay::keyPressed (const juce::KeyPress& key)
         for (int i = 0; i < kMaxBands; ++i)
             if (members[static_cast<size_t> (i)])
                 copy = juce::jmax (copy, presets::addBandFromVar (processor, presets::bandToVar (processor, i)));
-        refresh();
+        syncBands();
         if (copy >= 0)
             selectBand (copy);
         return true;
@@ -1114,7 +1142,7 @@ bool ResponseDisplay::keyPressed (const juce::KeyPress& key)
         for (int i = 0; i < kMaxBands; ++i)
             if (members[static_cast<size_t> (i)])
                 processor.removeBand (i);
-        refresh();
+        syncBands();
         return true;
     }
     if (key.getKeyCode() == juce::KeyPress::leftKey || key.getKeyCode() == juce::KeyPress::rightKey)
@@ -1124,7 +1152,7 @@ bool ResponseDisplay::keyPressed (const juce::KeyPress& key)
         for (int i = 0; i < kMaxBands; ++i)
             if (inSelection[static_cast<size_t> (i)])
                 processor.setBandValue (i, "freq", static_cast<float> (juce::jlimit (10.0, 30000.0, bands[static_cast<size_t> (i)].freq * std::pow (2.0, semis / 12.0))));
-        refresh();
+        syncBands();
         return true;
     }
     if ((key.getKeyCode() == juce::KeyPress::upKey || key.getKeyCode() == juce::KeyPress::downKey) && hasGain (b.shape))
@@ -1134,7 +1162,7 @@ bool ResponseDisplay::keyPressed (const juce::KeyPress& key)
         for (int i = 0; i < kMaxBands; ++i)
             if (inSelection[static_cast<size_t> (i)] && hasGain (bands[static_cast<size_t> (i)].shape))
                 processor.setBandValue (i, "gain", static_cast<float> (juce::jlimit (-30.0, 30.0, bands[static_cast<size_t> (i)].gainDb + step)));
-        refresh();
+        syncBands();
         return true;
     }
     return false;
@@ -1171,7 +1199,7 @@ void ResponseDisplay::showBandMenu (int band)
         else if (result >= 300) proc.setBandValue (band, "place", static_cast<float> (result - 300));
         else if (result >= 200) proc.setBandValue (band, "slope", static_cast<float> (result - 200));
         else if (result >= 100) proc.setBandValue (band, "shape", static_cast<float> (result - 100));
-        safe->refresh();
+        safe->syncBands();
     });
 }
 } // namespace of

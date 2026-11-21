@@ -29,6 +29,7 @@ public:
 
 private:
     void timerCallback() override;
+    void askForTilt();
     void paintMeter (juce::Graphics&);
     void showPresetMenu();
     void showViewMenu();
