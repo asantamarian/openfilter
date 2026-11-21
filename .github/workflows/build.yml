@@ -48,6 +48,18 @@ jobs:
         run: cmake --build build --config Release
       - name: Unit tests
         run: cd build && ctest -C Release -R of_tests --output-on-failure
+      # Built on every push so the installer script is known to compile before a release.
+      - name: Installer
+        shell: pwsh
+        run: |
+          $version = "dev"
+          choco install innosetup -y --no-progress
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DVersion=$version" "/DRoot=$PWD" "/DArtefacts=$PWD\build\OpenFilterEQ_artefacts\Release" packaging\windows\installer.iss
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: openfilter-eq-dev-windows-x64-setup.exe
+          retention-days: 14
 
   macos:
     runs-on: macos-latest

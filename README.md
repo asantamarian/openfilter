@@ -14,7 +14,8 @@ host yet, and nobody has tuned the plugin by ear. See [Known limits](#known-limi
 
 **Download 0.1.2:**
 [Linux](https://github.com/asantamarian/openfilter/releases/latest/download/openfilter-eq-0.1.2-linux-x86_64-ubuntu22.tar.gz) ·
-[Windows](https://github.com/asantamarian/openfilter/releases/latest/download/openfilter-eq-0.1.2-windows-x64.zip) ·
+[Windows installer](https://github.com/asantamarian/openfilter/releases/latest/download/openfilter-eq-0.1.2-windows-x64-setup.exe)
+([zip](https://github.com/asantamarian/openfilter/releases/latest/download/openfilter-eq-0.1.2-windows-x64.zip)) ·
 [macOS](https://github.com/asantamarian/openfilter/releases/latest/download/openfilter-eq-0.1.2-macos-universal.zip) ·
 [all releases](https://github.com/asantamarian/openfilter/releases)
 
@@ -56,6 +57,11 @@ How to use it all: [docs/manual.md](docs/manual.md).
 Download the package for your system from the links above or the
 [releases page](https://github.com/asantamarian/openfilter/releases), unpack it,
 copy the plugin to your plugin folder, then rescan in your host.
+
+On Windows the installer (`-setup.exe`) does the copying: it puts the VST3 and CLAP
+plugins in the folders below and the standalone program under Program Files. It is
+not signed, so Windows SmartScreen asks before running it ("More info", "Run
+anyway"). The zip holds the same files for copying by hand.
 
 | Format | Linux | Windows | macOS |
 |---|---|---|---|

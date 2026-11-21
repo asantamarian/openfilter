@@ -81,11 +81,19 @@ jobs:
           cp assets/fonts/*-OFL.txt "$NAME/licenses/"
           7z a "$NAME.zip" "$NAME"
           echo "PACKAGE=$NAME.zip" >> "$GITHUB_ENV"
+          echo "INSTALLER=$NAME-setup.exe" >> "$GITHUB_ENV"
+      # The installer copies the plugins to the folders hosts scan; the zip is for copying by hand.
+      - name: Installer
+        shell: pwsh
+        run: |
+          $version = $env:TAG -replace '^v', ''
+          choco install innosetup -y --no-progress
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DVersion=$version" "/DRoot=$PWD" "/DArtefacts=$PWD\build\OpenFilterEQ_artefacts\Release" packaging\windows\installer.iss
       - name: Attach to the release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$TAG" "$PACKAGE" --clobber
+        run: gh release upload "$TAG" "$PACKAGE" "$INSTALLER" --clobber
 
   # macOS has never been built either. Universal (Apple silicon and Intel). The result is
   # not signed or notarised, so macOS will warn about it until that is set up.
