@@ -4,7 +4,7 @@ OpenFilter EQ is an equalizer plugin with up to 32 bands. Each band can be stati
 dynamic or spectral, can sit on the whole stereo signal or on one of left, right,
 mid and side, and can be minimum phase or linear phase.
 
-This manual describes version 0.1.1, as built. Where something is limited or not
+This manual describes version 0.1.2, as built. Where something is limited or not
 finished, it says so.
 
 ## Contents

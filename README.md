@@ -8,14 +8,14 @@ minimum phase or linear phase.
 
 VST3, CLAP, LV2 and standalone. Built with JUCE. Licence: AGPL-3.0-or-later.
 
-**Status: 0.1.1, an early version.** It is developed and tested on Linux. The
+**Status: 0.1.2, an early version.** It is developed and tested on Linux. The
 Windows and macOS packages are built automatically and have not been tried in a
 host yet, and nobody has tuned the plugin by ear. See [Known limits](#known-limits).
 
-**Download 0.1.1:**
-[Linux](https://github.com/asantamarian/openfilter/releases/latest/download/openfilter-eq-0.1.1-linux-x86_64-ubuntu22.tar.gz) ·
-[Windows](https://github.com/asantamarian/openfilter/releases/latest/download/openfilter-eq-0.1.1-windows-x64.zip) ·
-[macOS](https://github.com/asantamarian/openfilter/releases/latest/download/openfilter-eq-0.1.1-macos-universal.zip) ·
+**Download 0.1.2:**
+[Linux](https://github.com/asantamarian/openfilter/releases/latest/download/openfilter-eq-0.1.2-linux-x86_64-ubuntu22.tar.gz) ·
+[Windows](https://github.com/asantamarian/openfilter/releases/latest/download/openfilter-eq-0.1.2-windows-x64.zip) ·
+[macOS](https://github.com/asantamarian/openfilter/releases/latest/download/openfilter-eq-0.1.2-macos-universal.zip) ·
 [all releases](https://github.com/asantamarian/openfilter/releases)
 
 ## Features
