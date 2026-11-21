@@ -750,7 +750,8 @@ void ResponseDisplay::paint (juce::Graphics& g)
         const auto& b = bands[static_cast<size_t> (selected)];
         const auto p = nodePosition (b);
         const auto freqText = params::formatFrequency (b.freq);
-        const auto gainText = hasGain (b.shape) ? params::formatGain (b.gainDb) : params::shapeNames()[static_cast<int> (b.shape)];
+        // The gain the node sits at, gain scale included; the dock's dial shows the band's own.
+        const auto gainText = hasGain (b.shape) ? params::formatGain (b.gainDb * scale) : params::shapeNames()[static_cast<int> (b.shape)];
         const auto font = theme::mono (11.0f);
         const float fw = juce::GlyphArrangement::getStringWidth (font, freqText), gw = juce::GlyphArrangement::getStringWidth (font, gainText);
         juce::Rectangle<float> tag (p.x + 20.0f, p.y - 42.0f, fw + gw + 26.0f, 24.0f);
