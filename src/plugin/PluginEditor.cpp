@@ -583,6 +583,8 @@ void OpenFilterEditor::showPresetMenu()
     const auto files = presets::list();
     juce::PopupMenu menu;
     const auto folder = presets::userFolder();
+    menu.addItem (4, "Reset (flat, default settings)");
+    menu.addSeparator();
     for (int i = 0; i < files.size(); ++i)
         menu.addItem (100 + i, files[i].getRelativePathFrom (folder).upToLastOccurrenceOf (presets::kExtension, false, true),
                       true, files[i].getFileNameWithoutExtension() == processor.presetName);
@@ -619,6 +621,8 @@ void OpenFilterEditor::showPresetMenu()
         }
         else if (result == 3)
             folder.revealToUser();
+        else if (result == 4)
+            proc.resetToDefaults();
         else if (result == 1 || result == 2)
         {
             const bool saving = result == 1;

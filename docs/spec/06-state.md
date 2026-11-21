@@ -94,7 +94,9 @@ parameter and migrate the value.
 
 Each slot holds a full parameter snapshot. Switching stores the current parameters
 into the active slot and applies the target slot (smoothly, through the engine's
-normal ramps). "Copy to..." copies the active slot to another. Slots are saved in
+normal ramps). A slot never used starts with every parameter at its default (no
+bands). Each slot keeps its own preset name. "Copy to..." copies the active slot,
+name included, to another. Slots are saved in
 the session, not in presets. Switching slots is exposed to the host as nothing: it
 changes many parameters at once and is reported with the usual per-parameter
 notifications.

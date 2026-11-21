@@ -345,6 +345,7 @@ void OpenFilterProcessor::getStateInformation (juce::MemoryBlock& dest)
             continue;   // the active slot is the live parameters
         juce::ValueTree one ("Slot");
         one.setProperty ("index", i, nullptr);
+        one.setProperty ("preset", slotPresets[static_cast<size_t> (i)], nullptr);
         one.setProperty ("values", juce::MemoryBlock (values.data(), values.size() * sizeof (float)).toBase64Encoding(), nullptr);
         slotsTree.appendChild (one, nullptr);
     }
@@ -421,6 +422,8 @@ void OpenFilterProcessor::setStateInformation (const void* data, int size)
 
     for (auto& values : slots)
         values.clear();
+    for (auto& name : slotPresets)
+        name.clear();
     slot = 0;
     const auto slotsTree = root.getChildWithName ("Slots");
     if (slotsTree.isValid())
@@ -436,6 +439,7 @@ void OpenFilterProcessor::setStateInformation (const void* data, int size)
                 auto& values = slots[static_cast<size_t> (index)];
                 values.resize (static_cast<size_t> (getParameters().size()));
                 std::memcpy (values.data(), block.getData(), block.getSize());
+                slotPresets[static_cast<size_t> (index)] = one.getProperty ("preset", "").toString();
             }
         }
     }
@@ -473,20 +477,38 @@ void OpenFilterProcessor::switchSlot (int index)
     if (index == slot)
         return;
     slots[static_cast<size_t> (slot)] = captureValues();
+    slotPresets[static_cast<size_t> (slot)] = presetName;
     slot = index;
-    // An unused slot starts as a copy of where you came from.
-    if (! slots[static_cast<size_t> (slot)].empty())
-    {
-        undo.beginNewTransaction ("Switch to slot " + juce::String::charToString (static_cast<juce::juce_wchar> ('A' + slot)));
-        applyValues (slots[static_cast<size_t> (slot)]);
-    }
+    // An unused slot starts flat: every parameter at its default, no bands and no preset
+    // name. "Copy to" in the View menu is the way to start one from another.
+    auto values = slots[static_cast<size_t> (slot)];
+    if (values.empty())
+        for (auto* p : getParameters())
+            values.push_back (p->getDefaultValue());
+    undo.beginNewTransaction ("Switch to slot " + juce::String::charToString (static_cast<juce::juce_wchar> ('A' + slot)));
+    applyValues (values);
+    // Each slot keeps the name of the preset loaded in it.
+    presetName = slotPresets[static_cast<size_t> (slot)];
+}
+
+void OpenFilterProcessor::resetToDefaults()
+{
+    std::vector<float> values;
+    for (auto* p : getParameters())
+        values.push_back (p->getDefaultValue());
+    undo.beginNewTransaction ("Reset");
+    applyValues (values);
+    presetName = {};
 }
 
 void OpenFilterProcessor::copyActiveSlotTo (int index)
 {
     index = juce::jlimit (0, kNumSlots - 1, index);
     if (index != slot)
+    {
         slots[static_cast<size_t> (index)] = captureValues();
+        slotPresets[static_cast<size_t> (index)] = presetName;
+    }
 }
 
 juce::RangedAudioParameter* OpenFilterProcessor::bandParam (int band, const char* suffix) const

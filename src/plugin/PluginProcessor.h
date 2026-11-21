@@ -115,6 +115,9 @@ public:
     int activeSlot() const noexcept { return slot; }
     void switchSlot (int index);
     void copyActiveSlotTo (int index);
+    /** Total reset of the active slot: every parameter at its default (no bands) and no
+        preset name. Bypass and delta stay as they are. One undo step. */
+    void resetToDefaults();
 
 private:
     struct BandPtrs { std::atomic<float>* used, *on, *shape, *slope, *freq, *gain, *q, *place,
@@ -150,6 +153,7 @@ private:
     int maxBlock = 512;
     int slot = 0;
     std::array<std::vector<float>, kNumSlots> slots;
+    std::array<juce::String, kNumSlots> slotPresets;   // preset name of each slot that is not active
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (OpenFilterProcessor)
 };

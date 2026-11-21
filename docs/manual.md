@@ -273,14 +273,16 @@ other instances but not edit them from here.
 
 ## 13. Presets, slots and undo
 
-**Presets** (top bar): nine factory presets, your own saved ones, and Save as /
-Load from file. Presets are plain JSON files with the extension `.ofeq`, stored in
+**Presets** (top bar): Reset, nine factory presets, your own saved ones, and Save
+as / Load from file. Reset removes every band and returns every setting of the
+current slot to its default (undo brings it back); the other slots are untouched. Presets are plain JSON files with the extension `.ofeq`, stored in
 your user data folder under `OpenFilter/EQ/Presets`. They hold the bands and phase,
 scale, auto gain and character settings, not output gain or view settings.
 
 **A/B/C/D**: four complete snapshots for comparing. Switching stores the current
-settings in the slot you leave. View menu, Slots, copies the current one to
-another. Bypass and Delta are not part of a slot.
+settings in the slot you leave. A slot you have not used yet starts flat, with no
+bands; View menu, Slots, copies the current one to another. Each slot remembers
+the name of the preset loaded in it. Bypass and Delta are not part of a slot.
 
 **Undo and redo** in the top bar; View menu, History, lists recent steps.
 

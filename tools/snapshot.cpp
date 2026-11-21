@@ -156,9 +156,16 @@ int main (int argc, char** argv)
     bool slotsOk = false;
     {
         const double freqA = processor.readBand (b4).freq;
+        processor.presetName = "In A";
         processor.switchSlot (1);
+        // A slot that was never used starts flat and unnamed, not as a copy of A.
+        bool flat = processor.presetName.isEmpty();
+        for (int i = 0; i < of::kMaxBands; ++i)
+            flat = flat && ! processor.readBand (i).used;
         processor.setBandValue (b4, "freq", 500.0f);
         processor.switchSlot (0);
+        flat = flat && processor.presetName == "In A";   // and A has its name back
+        processor.presetName = {};
         const bool backToA = std::abs (processor.readBand (b4).freq - freqA) < 1.0e-3 * freqA;
         processor.switchSlot (1);
         const bool bKept = std::abs (processor.readBand (b4).freq - 500.0) < 0.5;
@@ -171,7 +178,7 @@ int main (int argc, char** argv)
         reloaded.switchSlot (0);
         const bool otherKept = std::abs (reloaded.readBand (b4).freq - freqA) < 1.0e-3 * freqA;
         processor.switchSlot (0);
-        slotsOk = backToA && bKept && activeKept && otherKept;
+        slotsOk = backToA && bKept && activeKept && otherKept && flat;
         std::printf ("A/B/C/D slots: %s\n", slotsOk ? "ok" : "WRONG");
     }
 
