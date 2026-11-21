@@ -23,7 +23,7 @@ Runs on the worker thread, triggered by the UI frame timer.
 - Overlap: new frame every `max(N/8, samples per UI frame)` samples.
 - Channel view: Stereo sum (power average), Left/Right, or Mid/Side split.
 - Magnitude to dB, then a display tilt of 0, 3 or 4.5 dB/oct around 1 kHz
-  (default 4.5).
+  (default 0, as host analyzers show it).
 - **Display resampling**: bins are mapped to `P` log-spaced display points (one
   per horizontal pixel, capped at 1024). Where several bins fall in one point take
   the maximum; where one bin spans several points use Catmull-Rom interpolation in

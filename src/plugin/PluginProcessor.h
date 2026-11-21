@@ -104,9 +104,9 @@ public:
     // View settings, kept in the session state.
     float uiScale = 1.0f;
     double displayRangeDb = 12.0;
-    bool analyzerOn = true, tableOpen = false, pianoStrip = false, analyzerFrozen = false, analyzerSpectrogram = false;
+    bool analyzerOn = true, tableOpen = false, pianoStrip = false, analyzerFrozen = false, analyzerSpectrogram = false, analyzerScale = true;
     int analyzerSpeed = 1;          // 0 slow .. 3 very fast
-    float analyzerTilt = 4.5f;      // dB per octave around 1 kHz
+    float analyzerTilt = 0.0f;      // dB per octave around 1 kHz; off, as host analyzers show it
     int analyzerRange = 90;         // dB shown below 0 dBFS
 
     // A/B/C/D: four full parameter snapshots (docs/spec/06-state.md section 5). Bypass and

@@ -331,6 +331,7 @@ void OpenFilterProcessor::getStateInformation (juce::MemoryBlock& dest)
     ui.setProperty ("piano", pianoStrip, nullptr);
     ui.setProperty ("analyzerSpeed", analyzerSpeed, nullptr);
     ui.setProperty ("analyzerTilt", analyzerTilt, nullptr);
+    ui.setProperty ("analyzerScale", analyzerScale, nullptr);
     ui.setProperty ("analyzerRange", analyzerRange, nullptr);
     ui.setProperty ("spectrogram", analyzerSpectrogram, nullptr);
     root.appendChild (ui, nullptr);
@@ -402,7 +403,8 @@ void OpenFilterProcessor::setStateInformation (const void* data, int size)
         tableOpen = ui.getProperty ("table", false);
         pianoStrip = ui.getProperty ("piano", false);
         analyzerSpeed = juce::jlimit (0, 3, static_cast<int> (ui.getProperty ("analyzerSpeed", 1)));
-        analyzerTilt = juce::jlimit (0.0f, 6.0f, static_cast<float> (ui.getProperty ("analyzerTilt", 4.5)));
+        analyzerTilt = juce::jlimit (0.0f, 6.0f, static_cast<float> (ui.getProperty ("analyzerTilt", 0.0)));
+        analyzerScale = ui.getProperty ("analyzerScale", true);
         const int shownRange = ui.getProperty ("analyzerRange", 90);
         analyzerRange = shownRange <= 60 ? 60 : shownRange <= 90 ? 90 : 120;
         analyzerSpectrogram = ui.getProperty ("spectrogram", false);

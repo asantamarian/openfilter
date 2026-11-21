@@ -51,7 +51,7 @@ Only Linux has been built and tested so far.
 | Display | The response curve, the bands, and the analyzer behind them |
 | Output column | Level meter, output gain, gain scale, balance, polarity |
 | Dock | The selected band's controls: band chips, shape picker, slope, channel, filter dials, dynamics |
-| Status bar | MIDI learn, latency, a hint, and Range, Tilt and Scale, each of which a click steps through |
+| Status bar | MIDI learn, latency, a hint, and Gain range, Tilt and Scale, each of which a click steps through |
 
 The window can be resized by its corner, down to 800 by 560. Below about 1180
 pixels wide the dock splits into a **Filter** page and a **Dynamics** page (button
@@ -232,16 +232,16 @@ View menu, Spectrum analyzer:
 | Speed | Slow to very fast |
 | Tilt | None, 1.5, 3, 4.5 or 6 dB per octave, or any value from 0 to 6 with "other" |
 | Range | 60, 90 or 120 dB |
+| Level scale | Shows or hides the dBFS labels down the left edge |
 
 **Piano strip** (View menu) shows note positions along the bottom of the display.
 With the band table open it sits just above the table.
 
 The analyzer has its own level scale, labelled in dBFS down the left edge: 0 at the
-top and the chosen range at the bottom. With a tilt the labels hold at 1 kHz. Turn
-the tilt off to compare slopes with an analyzer that has none, such as the ones in
-most hosts.
+top and the chosen range at the bottom. The tilt is off by default, as in most host
+analyzers; with a tilt the labels hold at 1 kHz.
 
-**Display range** (View menu, or Range in the status bar) sets the gain axis on the
+**Gain range** (status bar) sets the gain axis on the
 right to ±3, 6, 12 or 30 dB. It scales the EQ curve and the nodes, not the analyzer.
 
 ## 11. EQ match and sketch

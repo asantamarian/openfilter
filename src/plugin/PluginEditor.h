@@ -66,7 +66,7 @@ private:
     juce::AudioProcessorValueTreeState::ButtonAttachment bypassAttachment, deltaAttachment;
     juce::Rectangle<int> topBar, outputColumn, meterArea, statusBar, statusHint, statusLatency;
     juce::TextButton midiLearnButton { "MIDI learn" };
-    TextLink rangeLink { "Range" }, tiltLink { "Tilt" }, scaleLink { "Scale" };
+    TextLink rangeLink { "Gain range" }, tiltLink { "Tilt" }, scaleLink { "Scale" };
     float meterDb[2] { -100.0f, -100.0f }, heldDb = -100.0f;
     int holdTicks = 0;
 

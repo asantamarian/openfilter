@@ -99,14 +99,14 @@ OpenFilterEditor::OpenFilterEditor (OpenFilterProcessor& p)
         processor.setMidiLearnMode (midiLearnButton.getToggleState());
         repaint();
     };
-    rangeLink.setTooltip ("Gain range of the display. Click to step through 3, 6, 12 and 30 dB.");
+    rangeLink.setTooltip ("Gain range of the EQ curve (the axis on the right), not of the analyzer. Click to step through 3, 6, 12 and 30 dB.");
     rangeLink.onClick = [this]
     {
         const int now = juce::roundToInt (processor.displayRangeDb);
         processor.displayRangeDb = now <= 3 ? 6.0 : now <= 6 ? 12.0 : now <= 12 ? 30.0 : 3.0;
         applyViewSettings();
     };
-    tiltLink.setTooltip ("Tilt of the analyzer, so typical material looks level. Click to step through none, 3 and 4.5 dB per octave; View > Spectrum analyzer has more values and takes any from 0 to 6.");
+    tiltLink.setTooltip ("Tilt of the analyzer: off shows the spectrum as host analyzers do, 4.5 makes typical material look level. Click to step through none, 3 and 4.5 dB per octave; View > Spectrum analyzer has more values and takes any from 0 to 6.");
     tiltLink.onClick = [this]
     {
         processor.analyzerTilt = processor.analyzerTilt < 0.1f ? 3.0f : processor.analyzerTilt < 3.1f ? 4.5f : 0.0f;
@@ -399,6 +399,7 @@ void OpenFilterEditor::applyViewSettings()
     constexpr float speeds[] = { 6.0f, 12.0f, 24.0f, 48.0f };
     display.setAnalyzerOptions (speeds[juce::jlimit (0, 3, processor.analyzerSpeed)], processor.analyzerTilt, processor.analyzerRange, processor.analyzerFrozen);
     display.setPianoStrip (processor.pianoStrip);
+    display.setAnalyzerScale (processor.analyzerScale);
     display.setSpectrogramView (processor.analyzerSpectrogram);
     table.setVisible (processor.tableOpen);
     display.setCoveredBottom (processor.tableOpen ? table.getHeight() : 0);
@@ -422,15 +423,13 @@ void OpenFilterEditor::themeChanged()
 
 void OpenFilterEditor::showViewMenu()
 {
-    juce::PopupMenu menu, scale, range, copy, history, look;
+    juce::PopupMenu menu, scale, copy, history, look;
     const int lookNow = juce::roundToInt (processor.apvts.getRawParameterValue ("lookahead")->load());
     const char* lookNames[] = { "Off", "2 ms", "5 ms", "10 ms" };
     for (int i = 0; i < 4; ++i)
         look.addItem (5000 + i, lookNames[i], true, i == lookNow);
     for (int percent : { 50, 75, 100, 125, 150, 200 })
         scale.addItem (1000 + percent, juce::String (percent) + " %", true, juce::roundToInt (processor.uiScale * 100.0f) == percent);
-    for (int db : { 3, 6, 12, 30 })
-        range.addItem (2000 + db, juce::String::fromUTF8 ("\xc2\xb1") + juce::String (db) + " dB", true, juce::roundToInt (processor.displayRangeDb) == db);
     const auto letter = [] (int i) { return juce::String::charToString (static_cast<juce::juce_wchar> ('A' + i)); };
     for (int i = 0; i < OpenFilterProcessor::kNumSlots; ++i)
         if (i != processor.activeSlot())
@@ -446,8 +445,8 @@ void OpenFilterEditor::showViewMenu()
     analyzer.addItem (2, "Show", true, processor.analyzerOn);
     analyzer.addItem (4, "Freeze", processor.analyzerOn, processor.analyzerFrozen);
     analyzer.addSeparator();
-    analyzer.addItem (7300, "View: input and output traces", true, ! processor.analyzerSpectrogram);
-    analyzer.addItem (7301, "View: spectrogram of the output", true, processor.analyzerSpectrogram);
+    analyzer.addItem (7500, "View: input and output traces", true, ! processor.analyzerSpectrogram);
+    analyzer.addItem (7501, "View: spectrogram of the output", true, processor.analyzerSpectrogram);
     analyzer.addSeparator();
     const char* speedNames[] = { "Speed: slow", "Speed: medium", "Speed: fast", "Speed: very fast" };
     for (int i = 0; i < 4; ++i)
@@ -464,6 +463,7 @@ void OpenFilterEditor::showViewMenu()
     analyzer.addSeparator();
     for (int db : { 60, 90, 120 })
         analyzer.addItem (7200 + db, "Range: " + juce::String (db) + " dB", true, processor.analyzerRange == db);
+    analyzer.addItem (8, "Level scale (dBFS, on the left)", true, processor.analyzerScale);
 
     juce::PopupMenu sketch;
     for (int n : { 3, 5, 8, 12 })
@@ -477,7 +477,6 @@ void OpenFilterEditor::showViewMenu()
     menu.addItem (3, "Piano strip", true, processor.pianoStrip);
     menu.addSubMenu ("Spectrum analyzer", analyzer);
     menu.addSeparator();
-    menu.addSubMenu ("Display range", range);
     menu.addSubMenu ("Interface size", scale);
     juce::PopupMenu themes;
     const auto themeNames = theme::available();
@@ -536,7 +535,8 @@ void OpenFilterEditor::showViewMenu()
         else if (result == 8991) theme::userFolder().revealToUser();
         else if (result >= 8000) safe->display.beginSketch (result - 8000);
         else if (result == 4) proc.analyzerFrozen = ! proc.analyzerFrozen;
-        else if (result >= 7300) proc.analyzerSpectrogram = result == 7301;
+        else if (result == 8) proc.analyzerScale = ! proc.analyzerScale;
+        else if (result >= 7500) proc.analyzerSpectrogram = result == 7501;   // above 7200 + the largest range
         else if (result >= 7200) proc.analyzerRange = result - 7200;
         else if (result == 7199) { safe->askForTilt(); return; }
         else if (result >= 7100) proc.analyzerTilt = static_cast<float> (result - 7100) / 10.0f;
@@ -553,7 +553,6 @@ void OpenFilterEditor::showViewMenu()
         }
         else if (result >= 4000) { for (int i = 0; i <= result - 4000; ++i) proc.undo.undo(); }
         else if (result >= 3000) proc.copyActiveSlotTo (result - 3000);
-        else if (result >= 2000) proc.displayRangeDb = result - 2000;
         else if (result >= 1000) proc.uiScale = static_cast<float> (result - 1000) / 100.0f;
         safe->applyViewSettings();
     });

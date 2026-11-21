@@ -49,7 +49,7 @@ private:
     std::unique_ptr<juce::dsp::FFT> fft;
     std::vector<float> window, ring, work, levels, scratch;
     int ringPos = 0, sinceFrame = 0;
-    float tilt = 4.5f, release = 12.0f;
+    float tilt = 0.0f, release = 12.0f;
     std::vector<double> averagePower;
     int averagedFrames = 0;
     bool averaging = false;

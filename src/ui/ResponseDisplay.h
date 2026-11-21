@@ -44,6 +44,8 @@ public:
     /** speed in dB per second of release; tilt in dB per octave; range in dB below 0 dBFS. */
     void setAnalyzerOptions (float releasePerSecond, float tiltPerOctave, int rangeDb, bool frozen);
     void setPianoStrip (bool show);
+    /** The analyzer's dBFS labels down the left edge. */
+    void setAnalyzerScale (bool show) { if (show != analyzerScale) { analyzerScale = show; repaint(); } }
     /** Height at the bottom that another panel covers; the piano strip moves above it. */
     void setCoveredBottom (int pixels);
     /** Spectrogram view: the output spectrum over the last 8 seconds, newest at the top, in
@@ -131,13 +133,14 @@ private:
     juce::Image spectrogram;
     int spectrogramRow = 0;
     bool spectrogramView = false;
-    float overlayTilt = 4.5f;
+    float overlayTilt = 0.0f;
     juce::Path preFill, postLine;
     std::vector<float> spectrumPoints, spectrumSmooth;
     juce::uint32 lastUpdateMs = 0;
     bool spectraShown = false, analyzerVisible = true, analyzerFrozen = false, piano = false;
     float analyzerRange = 90.0f;
     int coveredBottom = 0;
+    bool analyzerScale = true;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ResponseDisplay)
 };

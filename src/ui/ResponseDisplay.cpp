@@ -535,7 +535,7 @@ void ResponseDisplay::paint (juce::Graphics& g)
     // The analyzer has its own scale, in dBFS from 0 at the top to the chosen range at the
     // bottom. It is labelled on the left so it is not read against the gain axis on the right.
     // With a tilt the labels hold at 1 kHz, the frequency the tilt turns around.
-    if (analyzerVisible && ! spectrogramView)
+    if (analyzerScale && analyzerVisible && ! spectrogramView)
     {
         g.setColour (theme::textFaint.withAlpha (0.6f));
         const int stepDb = juce::roundToInt (analyzerRange / 6.0f);
